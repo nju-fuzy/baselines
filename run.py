@@ -61,15 +61,16 @@ def train(args, extra_args):
     # 使用import_module导入包
     learn = get_learn_function(args.alg)
     alg_kwargs = get_learn_function_defaults(args.alg, env_type)
+    #print("=========================================================")
+    #print(alg_kwargs)
     alg_kwargs.update(extra_args)
+    #print(alg_kwargs)
 
     # 创建环境
     env = build_env(args)
     if args.save_video_interval != 0:
         env = VecVideoRecorder(env, osp.join(logger.Logger.CURRENT.dir, "videos"), record_video_trigger=lambda x: x % args.save_video_interval == 0, video_length=args.save_video_length)
     
-    # 训练模型
-    # 提供的参数是seed 和 timesteps
     if args.network:
         alg_kwargs['network'] = args.network
     else:
@@ -77,7 +78,13 @@ def train(args, extra_args):
             alg_kwargs['network'] = get_default_network(env_type)
 
     print('Training {} on {}:{} with arguments \n{}'.format(args.alg, env_type, env_id, alg_kwargs))
-
+    #print(alg_kwargs)
+    '''
+    训练模型,提供的参数是seed 和 timesteps and
+    nsteps': 128, 'nminibatches': 4, 'lam': 0.95, 'gamma': 0.99, 'noptepochs': 4, 'log_interval': 1, 
+    'ent_coef': 0.01, 'lr': <function atari.<locals>.<lambda> at 0x7f7f32867730>, 
+    'cliprange': <function atari.<locals>.<lambda> at 0x7f7f2bb908c8>, 'network': 'cnn'}
+    '''
     model = learn(
         env=env,
         seed=seed,
@@ -166,6 +173,7 @@ def get_learn_function(alg):
 def get_learn_function_defaults(alg, env_type):
     try:
         alg_defaults = get_alg_module(alg, 'defaults')
+        # getattr函数用于返回一个对象属性值
         kwargs = getattr(alg_defaults, env_type)()
     except (ImportError, AttributeError):
         kwargs = {}

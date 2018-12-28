@@ -34,6 +34,7 @@ class Model(object):
             act_model = policy(nbatch_act, 1, sess)
 
             # Train model for training
+            #创建策略网络和值网络的时候指定batchsize构建placeholder
             if microbatch_size is None:
                 train_model = policy(nbatch_train, nsteps, sess)
             else:

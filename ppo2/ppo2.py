@@ -78,13 +78,16 @@ def learn(*, network, env, total_timesteps, eval_env = None, seed=None, nsteps=2
     '''
 
     set_global_seeds(seed)
-
     if isinstance(lr, float): lr = constfn(lr)
     else: assert callable(lr)
     if isinstance(cliprange, float): cliprange = constfn(cliprange)
     else: assert callable(cliprange)
     total_timesteps = int(total_timesteps)
-
+    
+    '''
+    创建policy的函数,这里没有给出value network，说明value network和policy network共享隐层
+    policy负责计算动作概率、采样动作和V值,model再封装一层，计算loss和更新参数 
+    '''
     policy = build_policy(env, network, **network_kwargs)
 
     # Get the nb of env
@@ -93,7 +96,10 @@ def learn(*, network, env, total_timesteps, eval_env = None, seed=None, nsteps=2
     # Get state_space and action_space
     ob_space = env.observation_space
     ac_space = env.action_space
-
+    #print(ob_space)
+    #print(ac_space)
+    #print('nenvs',nenvs)
+    #print(nsteps)
     # Calculate the batch_size
     nbatch = nenvs * nsteps
     nbatch_train = nbatch // nminibatches
@@ -102,13 +108,17 @@ def learn(*, network, env, total_timesteps, eval_env = None, seed=None, nsteps=2
     if model_fn is None:
         from baselines.ppo2.model import Model
         model_fn = Model
-
+    
+    # model里定义了act_model和train_model以及训练的过程
     model = model_fn(policy=policy, ob_space=ob_space, ac_space=ac_space, nbatch_act=nenvs, nbatch_train=nbatch_train,
                     nsteps=nsteps, ent_coef=ent_coef, vf_coef=vf_coef,
                     max_grad_norm=max_grad_norm)
-
+    # 是否读取预存的参数
     if load_path is not None:
         model.load(load_path)
+
+    # 创建runner
+    # runner的run方法执行nsteps步返回minibatch,共采样了nsteps × nenvs次
     # Instantiate the runner object
     runner = Runner(env=env, model=model, nsteps=nsteps, gamma=gamma, lam=lam)
     if eval_env is not None:
@@ -121,6 +131,9 @@ def learn(*, network, env, total_timesteps, eval_env = None, seed=None, nsteps=2
     # Start total timer
     tfirststart = time.time()
 
+    # nupdates更新多少次模型
+    # nbatch每个batch执行多少个timesteps
+
     nupdates = total_timesteps//nbatch
     for update in range(1, nupdates+1):
         assert nbatch % nminibatches == 0
@@ -132,7 +145,18 @@ def learn(*, network, env, total_timesteps, eval_env = None, seed=None, nsteps=2
         # Calculate the cliprange
         cliprangenow = cliprange(frac)
         # Get minibatch
+        '''
+        obs 是探索的状态值
+        returns 是折扣累积回报
+        masks
+        actions 是采样的动作
+        values  动作的V值
+        neglogpacs 动作概率的负log
+        states 
+        epinfos
+        '''
         obs, returns, masks, actions, values, neglogpacs, states, epinfos = runner.run() #pylint: disable=E0632
+        #print('masks',masks)
         if eval_env is not None:
             eval_obs, eval_returns, eval_masks, eval_actions, eval_values, eval_neglogpacs, eval_states, eval_epinfos = eval_runner.run() #pylint: disable=E0632
 

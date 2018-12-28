@@ -11,6 +11,7 @@ import gym
 
 
 class PolicyWithValue(object):
+    # 封装策略网络和值网络
     """
     Encapsulates fields and methods for RL policy and value function estimation with shared parameters
     """
@@ -22,8 +23,11 @@ class PolicyWithValue(object):
         env             RL environment
 
         observations    tensorflow placeholder in which the observations will be fed
-
+        
+        策略网络的隐层,只是定义了计算图
         latent          latent state from which policy distribution parameters should be inferred
+        
+        值网络的隐层,如果共享隐层，策略网络的隐层 and 值网络的隐层相同
 
         vf_latent       latent state from which value function should be inferred (if None, then latent is used)
 
@@ -39,18 +43,24 @@ class PolicyWithValue(object):
         self.__dict__.update(tensors)
 
         vf_latent = vf_latent if vf_latent is not None else latent
-
+        
+        # flatten 除了第一维，其他维展平
         vf_latent = tf.layers.flatten(vf_latent)
         latent = tf.layers.flatten(latent)
-
+        #print('000000000000000000000000000000000000000000000000000000000000')
+        #print(latent)
         # Based on the action space, will select what probability distribution type
         self.pdtype = make_pdtype(env.action_space)
-
+        
+        '''
+        # pdtype根据不同action类型在隐层后接全连接
+        # self.pd 是保存了动作概率分布的类，封装了很多方法可以用来计算与分布相关的量,比如下边计算的sample和neglogp
+        '''
         self.pd, self.pi = self.pdtype.pdfromlatent(latent, init_scale=0.01)
-
+        # 根据概率分布采样动作
         # Take an action
         self.action = self.pd.sample()
-
+        # 计算所采样动作的负log
         # Calculate the neg log of our probability
         self.neglogp = self.pd.neglogp(self.action)
         self.sess = sess or tf.get_default_session()
@@ -60,9 +70,9 @@ class PolicyWithValue(object):
             self.q = fc(vf_latent, 'q', env.action_space.n)
             self.vf = self.q
         else:
+            # 每个状态只有一个V值
             self.vf = fc(vf_latent, 'vf', 1)
             self.vf = self.vf[:,0]
-
     def _evaluate(self, variables, observation, **extra_feed):
         sess = self.sess
         feed_dict = {self.X: adjust_shape(self.X, observation)}
@@ -73,7 +83,8 @@ class PolicyWithValue(object):
                     feed_dict[inpt] = adjust_shape(inpt, data)
 
         return sess.run(variables, feed_dict)
-
+    
+    # step 的功能是fed数据计算variable
     def step(self, observation, **extra_feed):
         """
         Compute next action(s) given the observation(s)
@@ -118,11 +129,15 @@ class PolicyWithValue(object):
     def load(self, load_path):
         tf_util.load_state(load_path, sess=self.sess)
 
+# 创建policy网络
 def build_policy(env, policy_network, value_network=None,  normalize_observations=False, estimate_q=False, **policy_kwargs):
+    # 生成策略网略
     if isinstance(policy_network, str):
         network_type = policy_network
         policy_network = get_network_builder(network_type)(**policy_kwargs)
-
+    '''
+    nbatch 网络训练的batchsize
+    '''
     def policy_fn(nbatch=None, nsteps=None, sess=None, observ_placeholder=None):
         ob_space = env.observation_space
 
@@ -139,10 +154,10 @@ def build_policy(env, policy_network, value_network=None,  normalize_observation
         encoded_x = encode_observation(ob_space, encoded_x)
 
         with tf.variable_scope('pi', reuse=tf.AUTO_REUSE):
+            # policy_latent 策略网络的输出
             policy_latent = policy_network(encoded_x)
             if isinstance(policy_latent, tuple):
                 policy_latent, recurrent_tensors = policy_latent
-
                 if recurrent_tensors is not None:
                     # recurrent architecture, need a few more steps
                     nenv = nbatch // nsteps
@@ -165,6 +180,7 @@ def build_policy(env, policy_network, value_network=None,  normalize_observation
                 # TODO recurrent architectures are not supported with value_network=copy yet
                 vf_latent = _v_net(encoded_x)
 
+        # 用前边定义的variable和隐层继续进行下面的计算
         policy = PolicyWithValue(
             env=env,
             observations=X,

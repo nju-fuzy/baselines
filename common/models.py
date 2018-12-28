@@ -216,6 +216,7 @@ def get_network_builder(name):
         return network_fn
 
     """
+    # callable函数用于检查一个对象是否是可调用的
     if callable(name):
         return name
     elif name in mapping:
