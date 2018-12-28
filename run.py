@@ -58,14 +58,18 @@ def train(args, extra_args):
     total_timesteps = int(args.num_timesteps)
     seed = args.seed
 
+    # 使用import_module导入包
     learn = get_learn_function(args.alg)
     alg_kwargs = get_learn_function_defaults(args.alg, env_type)
     alg_kwargs.update(extra_args)
 
+    # 创建环境
     env = build_env(args)
     if args.save_video_interval != 0:
         env = VecVideoRecorder(env, osp.join(logger.Logger.CURRENT.dir, "videos"), record_video_trigger=lambda x: x % args.save_video_interval == 0, video_length=args.save_video_length)
-
+    
+    # 训练模型
+    # 提供的参数是seed 和 timesteps
     if args.network:
         alg_kwargs['network'] = args.network
     else:
@@ -84,6 +88,9 @@ def train(args, extra_args):
     return model, env
 
 
+# 创建环境
+# 注意这里的atari环境要选noframeskip的，在算法里会执行四次step
+# 如果选择deterministic，在gym envs里就会执行四次
 def build_env(args):
     ncpu = multiprocessing.cpu_count()
     if sys.platform == 'darwin': ncpu //= 2
@@ -133,7 +140,7 @@ def get_env_type(env_id):
 
     return env_type, env_id
 
-
+# 默认的网络类型
 def get_default_network(env_type):
     if env_type in {'atari', 'retro'}:
         return 'cnn'
@@ -184,7 +191,8 @@ def parse_cmdline_kwargs(args):
 
 def main(args):
     # configure logger, disable logging in child MPI processes (with rank > 0)
-
+    
+    # 解析参数
     arg_parser = common_arg_parser()
     args, unknown_args = arg_parser.parse_known_args(args)
     extra_args = parse_cmdline_kwargs(unknown_args)
@@ -195,14 +203,17 @@ def main(args):
     else:
         logger.configure(format_strs=[])
         rank = MPI.COMM_WORLD.Get_rank()
-
+    
+    # 调用train函数训练模型
     model, env = train(args, extra_args)
     env.close()
-
+    
+    # 保存模型
     if args.save_path is not None and rank == 0:
         save_path = osp.expanduser(args.save_path)
         model.save(save_path)
-
+    
+    # play训练好的模型
     if args.play:
         logger.log("Running trained model")
         env = build_env(args)
