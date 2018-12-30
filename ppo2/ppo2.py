@@ -163,7 +163,6 @@ def learn(*, network, env, total_timesteps, eval_env = None, seed=None, nsteps=2
         epinfobuf.extend(epinfos)
         if eval_env is not None:
             eval_epinfobuf.extend(eval_epinfos)
-
         # Here what we're going to do is for each minibatch calculate the loss and append it.
         mblossvals = []
         if states is None: # nonrecurrent version
@@ -222,6 +221,7 @@ def learn(*, network, env, total_timesteps, eval_env = None, seed=None, nsteps=2
                 logger.dumpkvs()
         if save_interval and (update % save_interval == 0 or update == 1) and logger.get_dir() and (MPI is None or MPI.COMM_WORLD.Get_rank() == 0):
             checkdir = osp.join(logger.get_dir(), 'checkpoints')
+            #print("check",checkdir)
             os.makedirs(checkdir, exist_ok=True)
             savepath = osp.join(checkdir, '%.5i'%update)
             print('Saving to', savepath)

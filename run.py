@@ -211,7 +211,7 @@ def main(args):
     else:
         logger.configure(format_strs=[])
         rank = MPI.COMM_WORLD.Get_rank()
-    
+
     # 调用train函数训练模型
     model, env = train(args, extra_args)
     env.close()

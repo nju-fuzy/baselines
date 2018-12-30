@@ -39,6 +39,7 @@ class Monitor(Wrapper):
             if v is None:
                 raise ValueError('Expected you to pass kwarg %s into reset'%k)
             self.current_reset_info[k] = v
+        #print(self.current_reset_info)
         return self.env.reset(**kwargs)
 
     def reset_state(self):
@@ -67,12 +68,13 @@ class Monitor(Wrapper):
             self.episode_rewards.append(eprew)
             self.episode_lengths.append(eplen)
             self.episode_times.append(time.time() - self.tstart)
+            #print(self.current_reset_info)
             epinfo.update(self.current_reset_info)
             self.results_writer.write_row(epinfo)
 
             if isinstance(info, dict):
                 info['episode'] = epinfo
-
+            #print("epinfo",epinfo)
         self.total_steps += 1
 
     def close(self):

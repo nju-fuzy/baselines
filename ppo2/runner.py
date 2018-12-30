@@ -44,6 +44,7 @@ class Runner(AbstractEnvRunner):
             infos 附加信息，剩余生命数
             '''
             self.obs[:], rewards, self.dones, infos = self.env.step(actions)
+            #print(infos)
             for info in infos:
                 maybeepinfo = info.get('episode')
                 if maybeepinfo: epinfos.append(maybeepinfo)
@@ -58,6 +59,7 @@ class Runner(AbstractEnvRunner):
         last_values = self.model.value(self.obs, S=self.states, M=self.dones)
         #print('last',last_values)
         # discount/bootstrap off value fn
+        #print(mb_rewards)
         mb_returns = np.zeros_like(mb_rewards)
         mb_advs = np.zeros_like(mb_rewards)
         lastgaelam = 0

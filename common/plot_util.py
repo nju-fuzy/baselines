@@ -220,6 +220,7 @@ def load_results(root_dir_or_dirs, enable_progress=True, enable_monitor=True, ve
                         print('successfully loaded %s'%dirname)
 
     if verbose: print('loaded %i results'%len(allresults))
+    #np.save('/home/lamda3/logs/results.npy',allresults)
     return allresults
 
 COLORS = ['blue', 'green', 'red', 'cyan', 'magenta', 'yellow', 'black', 'purple', 'pink',
