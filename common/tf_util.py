@@ -219,12 +219,14 @@ def var_shape(x):
         "shape function assumes that shape is fully known"
     return out
 
+# 返回各个维度乘积
 def numel(x):
     return intprod(var_shape(x))
 
 def intprod(x):
     return int(np.prod(x))
 
+# 把梯度展开成一个向量
 def flatgrad(loss, var_list, clip_norm=None):
     grads = tf.gradients(loss, var_list)
     if clip_norm is not None:
@@ -253,6 +255,7 @@ class SetFromFlat(object):
         tf.get_default_session().run(self.op, feed_dict={self.theta: theta})
 
 class GetFlat(object):
+    # 把变量展开成一个向量
     def __init__(self, var_list):
         self.op = tf.concat(axis=0, values=[tf.reshape(v, [numel(v)]) for v in var_list])
 

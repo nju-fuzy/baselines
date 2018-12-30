@@ -164,7 +164,7 @@ def learn(*,
             intra_op_parallelism_threads=cpus_per_worker
     ))
 
-
+    # 创建policy
     policy = build_policy(env, network, value_network='copy', **network_kwargs)
     set_global_seeds(seed)
 
@@ -175,6 +175,8 @@ def learn(*,
     ac_space = env.action_space
 
     ob = observation_placeholder(ob_space)
+
+    # 创建pi和oldpi
     with tf.variable_scope("pi"):
         pi = policy(observ_placeholder=ob)
     with tf.variable_scope("oldpi"):
@@ -209,11 +211,18 @@ def learn(*,
     vf_var_list = get_vf_trainable_variables("pi")
 
     vfadam = MpiAdam(vf_var_list)
-
+    
+    # 把变量展开成一个向量
     get_flat = U.GetFlat(var_list)
+    # 这个类可以把一个向量分片赋值给var_list里的变量
     set_from_flat = U.SetFromFlat(var_list)
+    # kl散度的梯度
     klgrads = tf.gradients(dist, var_list)
+
+    # 拉直的向量
     flat_tangent = tf.placeholder(dtype=tf.float32, shape=[None], name="flat_tan")
+
+    # 把拉直的向量重新分成很多向量
     shapes = [var.get_shape().as_list() for var in var_list]
     start = 0
     tangents = []
@@ -221,6 +230,8 @@ def learn(*,
         sz = U.intprod(shape)
         tangents.append(tf.reshape(flat_tangent[start:start+sz], shape))
         start += sz
+
+    # 把kl散度梯度与变量乘积相加
     gvp = tf.add_n([tf.reduce_sum(g*tangent) for (g, tangent) in zipsame(klgrads, tangents)]) #pylint: disable=E1111
     fvp = U.flatgrad(gvp, var_list)
 
