@@ -17,7 +17,9 @@ try:
 except ImportError:
     MPI = None
 
+# 返回一个迭代器，每过一个horizon返回一次数据
 def traj_segment_generator(pi, env, horizon, stochastic):
+    # horizon 就是 timesteps_per_batch
     # Initialize state variables
     t = 0
     ac = env.action_space.sample()
@@ -212,7 +214,7 @@ def learn(*,
 
     vfadam = MpiAdam(vf_var_list)
     
-    # 把变量展开成一个向量
+    # 把变量展开成一个向量的函数
     get_flat = U.GetFlat(var_list)
     # 这个类可以把一个向量分片赋值给var_list里的变量
     set_from_flat = U.SetFromFlat(var_list)
@@ -233,11 +235,14 @@ def learn(*,
 
     # 把kl散度梯度与变量乘积相加
     gvp = tf.add_n([tf.reduce_sum(g*tangent) for (g, tangent) in zipsame(klgrads, tangents)]) #pylint: disable=E1111
+    # 把gvp的梯度展成向量
     fvp = U.flatgrad(gvp, var_list)
-
+    
+    # 用学习后的策略更新old策略
     assign_old_eq_new = U.function([],[], updates=[tf.assign(oldv, newv)
         for (oldv, newv) in zipsame(get_variables("oldpi"), get_variables("pi"))])
-
+    
+    # 计算loss
     compute_losses = U.function([ob, ac, atarg], losses)
     compute_lossandgrad = U.function([ob, ac, atarg], losses + [U.flatgrad(optimgain, var_list)])
     compute_fvp = U.function([flat_tangent, ob, ac, atarg], fvp)
@@ -263,27 +268,36 @@ def learn(*,
             out = np.copy(x)
 
         return out
-
+    
+    # 初始化variable
     U.initialize()
     if load_path is not None:
         pi.load(load_path)
-
+    
+    # 得到初始化的参数向量
     th_init = get_flat()
     if MPI is not None:
         MPI.COMM_WORLD.Bcast(th_init, root=0)
-
+    
+    # 把向量the_init的值分片赋值给var_list
     set_from_flat(th_init)
+
+    #同步
     vfadam.sync()
     print("Init param sum", th_init.sum(), flush=True)
 
     # Prepare for rollouts
     # ----------------------------------------
+
+    # 这是一个生成数据的迭代器
     seg_gen = traj_segment_generator(pi, env, timesteps_per_batch, stochastic=True)
 
     episodes_so_far = 0
     timesteps_so_far = 0
     iters_so_far = 0
     tstart = time.time()
+
+    # 双端队列
     lenbuffer = deque(maxlen=40) # rolling buffer for episode lengths
     rewbuffer = deque(maxlen=40) # rolling buffer for episode rewards
 
@@ -306,11 +320,15 @@ def learn(*,
 
         with timed("sampling"):
             seg = seg_gen.__next__()
+
+        # 计算累积回报
         add_vtarg_and_adv(seg, gamma, lam)
 
         # ob, ac, atarg, ret, td1ret = map(np.concatenate, (obs, acs, atargs, rets, td1rets))
         ob, ac, atarg, tdlamret = seg["ob"], seg["ac"], seg["adv"], seg["tdlamret"]
         vpredbefore = seg["vpred"] # predicted value function before udpate
+
+        # 标准化
         atarg = (atarg - atarg.mean()) / atarg.std() # standardized advantage function estimate
 
         if hasattr(pi, "ret_rms"): pi.ret_rms.update(tdlamret)
@@ -326,6 +344,9 @@ def learn(*,
             *lossbefore, g = compute_lossandgrad(*args)
         lossbefore = allmean(np.array(lossbefore))
         g = allmean(g)
+
+        # g是目标函数的梯度
+        # 利用共轭梯度获得更新方向
         if np.allclose(g, 0):
             logger.log("Got zero gradient. not updating")
         else:
