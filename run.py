@@ -67,7 +67,6 @@ def train(args, extra_args):
     env = build_env(args,extra_args)
     extra_args.pop('num_reward')
     extra_args.pop('reward_type')
-    print(extra_args)
 
     # 使用import_module导入包
     learn = get_learn_function(args.alg)
