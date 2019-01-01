@@ -64,9 +64,7 @@ def train(args, extra_args):
     seed = args.seed
 
     # 创建环境
-    env = build_env(args,extra_args)
-    extra_args.pop('num_reward')
-    extra_args.pop('reward_type')
+    env = build_env(args)
 
     # 使用import_module导入包
     learn = get_learn_function(args.alg)
@@ -94,12 +92,22 @@ def train(args, extra_args):
     'ent_coef': 0.01, 'lr': <function atari.<locals>.<lambda> at 0x7f7f32867730>, 
     'cliprange': <function atari.<locals>.<lambda> at 0x7f7f2bb908c8>, 'network': 'cnn'}
     '''
-    model = learn(
-        env=env,
-        seed=seed,
-        total_timesteps=total_timesteps,
-        **alg_kwargs
-    )
+    if args.alg == "mrtrpo_mpi":
+        model = learn(
+            env=env,
+            seed=seed,
+            total_timesteps=total_timesteps,
+            num_reward=args.num_reward,
+            **alg_kwargs
+        )
+
+    else:
+        model = learn(
+            env=env,
+            seed=seed,
+            total_timesteps=total_timesteps,
+            **alg_kwargs
+        )
 
     return model, env
 
@@ -107,7 +115,7 @@ def train(args, extra_args):
 # 创建环境
 # 注意这里的atari环境要选noframeskip的，在算法里会执行四次step
 # 如果选择deterministic，在gym envs里就会执行四次
-def build_env(args,extra_args):
+def build_env(args):
     ncpu = multiprocessing.cpu_count()
     if sys.platform == 'darwin': ncpu //= 2
     nenv = args.num_env or ncpu
@@ -115,15 +123,14 @@ def build_env(args,extra_args):
     seed = args.seed
 
     env_type, env_id = get_env_type(args.env)
-
     if env_type in {'atari', 'retro'}:
         if alg == 'deepq':
-            env = make_env(env_id, env_type, seed=seed, wrapper_kwargs={'frame_stack': True}, num_reward = extra_args['num_reward'], reward_type = extra_args['reward_type'])
+            env = make_env(env_id, env_type, seed=seed, wrapper_kwargs={'frame_stack': True}, num_reward = args.num_reward, reward_type = args.reward_type)
         elif alg == 'trpo_mpi':
-            env = make_env(env_id, env_type, seed=seed, num_reward = extra_args['num_reward'], reward_type = extra_args['reward_type'])
+            env = make_env(env_id, env_type, seed=seed, num_reward = args.num_reward, reward_type = args.reward_type)
         else:
             frame_stack_size = 4
-            env = make_vec_env(env_id, env_type, nenv, seed, gamestate=args.gamestate, reward_scale=args.reward_scale, num_reward = extra_args['num_reward'], reward_type = extra_args['reward_type'])
+            env = make_vec_env(env_id, env_type, nenv, seed, gamestate=args.gamestate, reward_scale=args.reward_scale, num_reward = args.num_reward, reward_type = args.reward_type)
             env = VecFrameStack(env, frame_stack_size)
 
     else:
@@ -134,7 +141,7 @@ def build_env(args,extra_args):
        get_session(config=config)
 
        flatten_dict_observations = alg not in {'her'}
-       env = make_vec_env(env_id, env_type, args.num_env or 1, seed, reward_scale=args.reward_scale, flatten_dict_observations=flatten_dict_observations, num_reward = extra_args['num_reward'], reward_type = extra_args['reward_type'])
+       env = make_vec_env(env_id, env_type, args.num_env or 1, seed, reward_scale=args.reward_scale, flatten_dict_observations=flatten_dict_observations, num_reward = args.num_reward, reward_type = args.reward_type)
 
        if env_type == 'mujoco':
            env = VecNormalize(env)
@@ -213,7 +220,6 @@ def main(args):
     arg_parser = common_arg_parser()
     args, unknown_args = arg_parser.parse_known_args(args)
     extra_args = parse_cmdline_kwargs(unknown_args)
-
     if MPI is None or MPI.COMM_WORLD.Get_rank() == 0:
         rank = 0
         logger.configure()
