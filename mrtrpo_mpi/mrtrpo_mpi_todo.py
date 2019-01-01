@@ -9,10 +9,8 @@ from baselines.common import set_global_seeds
 from baselines.common.mpi_adam import MpiAdam
 from baselines.common.cg import cg
 from baselines.common.input import observation_placeholder
-from baselines.common.mr_policy import build_policy
+from baselines.common.policies import build_policy
 from contextlib import contextmanager
-from pprint import pprint
-import pdb
 
 try:
     from mpi4py import MPI
@@ -20,7 +18,7 @@ except ImportError:
     MPI = None
 
 # 返回一个迭代器，每过一个horizon返回一次数据
-def traj_segment_generator(pi, env, horizon, stochastic, num_reward = 1):
+def traj_segment_generator(pi, env, horizon, stochastic):
     # horizon 就是 timesteps_per_batch
     # Initialize state variables
     t = 0
@@ -36,8 +34,8 @@ def traj_segment_generator(pi, env, horizon, stochastic, num_reward = 1):
 
     # Initialize history arrays
     obs = np.array([ob for _ in range(horizon)])
-    rews = np.zeros((horizon,num_reward), 'float32')
-    vpreds = np.zeros((horizon,num_reward), 'float32')
+    rews = np.zeros(horizon, 'float32')
+    vpreds = np.zeros(horizon, 'float32')
     news = np.zeros(horizon, 'int32')
     acs = np.array([ac for _ in range(horizon)])
     prevacs = acs.copy()
@@ -45,8 +43,6 @@ def traj_segment_generator(pi, env, horizon, stochastic, num_reward = 1):
     while True:
         prevac = ac
         ac, vpred, _, _ = pi.step(ob, stochastic=stochastic)
-        print('ob',ob.shape)
-        print('vpred',vpred)
         # Slight weirdness here because we need value function at time T
         # before returning segment [0, T-1] so we get the correct
         # terminal value
@@ -67,7 +63,6 @@ def traj_segment_generator(pi, env, horizon, stochastic, num_reward = 1):
         prevacs[i] = prevac
 
         ob, rew, new, _ = env.step(ac)
-        print('rew',rew)
         rews[i] = rew
 
         cur_ep_ret += rew
@@ -80,11 +75,11 @@ def traj_segment_generator(pi, env, horizon, stochastic, num_reward = 1):
             ob = env.reset()
         t += 1
 
-def add_vtarg_and_adv(seg, gamma, lam, num_reward = 1):
+def add_vtarg_and_adv(seg, gamma, lam):
     new = np.append(seg["new"], 0) # last element is only used for last vtarg, but we already zeroed it if last new = 1
     vpred = np.append(seg["vpred"], seg["nextvpred"])
     T = len(seg["rew"])
-    seg["adv"] = gaelam = np.empty((T,num_reward), 'float32')
+    seg["adv"] = gaelam = np.empty(T, 'float32')
     rew = seg["rew"]
     lastgaelam = 0
     for t in reversed(range(T)):
@@ -157,7 +152,6 @@ def learn(*,
     learnt model
 
     '''
-    print("^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^")
 
     if MPI is not None:
         nworkers = MPI.COMM_WORLD.Get_size()
@@ -195,23 +189,18 @@ def learn(*,
     ret = tf.placeholder(dtype=tf.float32, shape=[None]) # Empirical return
 
     ac = pi.pdtype.sample_placeholder([None])
-    
-    #此处的KL div和entropy与reward无关
-    ##################################
+
     kloldnew = oldpi.pd.kl(pi.pd)
     ent = pi.pd.entropy()
     meankl = tf.reduce_mean(kloldnew)
     meanent = tf.reduce_mean(ent)
-    # entbonus 是entropy loss
     entbonus = ent_coef * meanent
-    #################################
+
     vferr = tf.reduce_mean(tf.square(pi.vf - ret))
 
-    ratio = tf.exp(pi.pd.logp(ac) - oldpi.pd.logp(ac)) 
-    # advantage * pnew / pold
+    ratio = tf.exp(pi.pd.logp(ac) - oldpi.pd.logp(ac)) # advantage * pnew / pold
     surrgain = tf.reduce_mean(ratio * atarg)
-    
-    # optimgain是总的loss
+
     optimgain = surrgain + entbonus
     losses = [optimgain, meankl, entbonus, surrgain, meanent]
     loss_names = ["optimgain", "meankl", "entloss", "surrgain", "entropy"]
@@ -223,18 +212,16 @@ def learn(*,
     # vf_var_list = [v for v in all_var_list if v.name.split("/")[1].startswith("vf")]
     var_list = get_pi_trainable_variables("pi")
     vf_var_list = get_vf_trainable_variables("pi")
-    print(vf_var_list)
-    vfadam = MpiAdam(vf_var_list)
 
-    # 把变量展开成一个向量的类
+    vfadam = MpiAdam(vf_var_list)
+    
+    # 把变量展开成一个向量的函数
     get_flat = U.GetFlat(var_list)
-    print(get_flat)
     # 这个类可以把一个向量分片赋值给var_list里的变量
     set_from_flat = U.SetFromFlat(var_list)
     # kl散度的梯度
     klgrads = tf.gradients(dist, var_list)
-    
-    ####################################################################
+
     # 拉直的向量
     flat_tangent = tf.placeholder(dtype=tf.float32, shape=[None], name="flat_tan")
 
@@ -246,7 +233,6 @@ def learn(*,
         sz = U.intprod(shape)
         tangents.append(tf.reshape(flat_tangent[start:start+sz], shape))
         start += sz
-    ####################################################################
 
     # 把kl散度梯度与变量乘积相加
     gvp = tf.add_n([tf.reduce_sum(g*tangent) for (g, tangent) in zipsame(klgrads, tangents)]) #pylint: disable=E1111
@@ -305,7 +291,7 @@ def learn(*,
     # ----------------------------------------
 
     # 这是一个生成数据的迭代器
-    seg_gen = traj_segment_generator(pi, env, 10, stochastic=True, num_reward = num_reward)
+    seg_gen = traj_segment_generator(pi, env, timesteps_per_batch, stochastic=True)
 
     episodes_so_far = 0
     timesteps_so_far = 0
@@ -336,9 +322,8 @@ def learn(*,
         with timed("sampling"):
             seg = seg_gen.__next__()
 
-
         # 计算累积回报
-        add_vtarg_and_adv(seg, gamma, lam , num_reward = num_reward)
+        add_vtarg_and_adv(seg, gamma, lam)
 
         # ob, ac, atarg, ret, td1ret = map(np.concatenate, (obs, acs, atargs, rets, td1rets))
         ob, ac, atarg, tdlamret = seg["ob"], seg["ac"], seg["adv"], seg["tdlamret"]
@@ -357,8 +342,6 @@ def learn(*,
 
         assign_old_eq_new() # set old parameter values to new parameter values
         with timed("computegrad"):
-            print("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
-            print(args)
             *lossbefore, g = compute_lossandgrad(*args)
         lossbefore = allmean(np.array(lossbefore))
         g = allmean(g)

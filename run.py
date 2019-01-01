@@ -126,7 +126,7 @@ def build_env(args):
     if env_type in {'atari', 'retro'}:
         if alg == 'deepq':
             env = make_env(env_id, env_type, seed=seed, wrapper_kwargs={'frame_stack': True}, num_reward = args.num_reward, reward_type = args.reward_type)
-        elif alg == 'trpo_mpi':
+        elif alg == 'trpo_mpi' or alg == 'mrtrpo_mpi':
             env = make_env(env_id, env_type, seed=seed, num_reward = args.num_reward, reward_type = args.reward_type)
         else:
             frame_stack_size = 4

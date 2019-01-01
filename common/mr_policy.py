@@ -16,7 +16,7 @@ class PolicyWithValue(object):
     Encapsulates fields and methods for RL policy and value function estimation with shared parameters
     """
 
-    def __init__(self, env, observations, latent, estimate_q=False, vf_latent=None, sess=None, **tensors):
+    def __init__(self, env, observations, latent, estimate_q=False, vf_latent=None, sess=None, num_reward=1, **tensors):
         """
         Parameters:
         ----------
@@ -41,6 +41,7 @@ class PolicyWithValue(object):
         self.state = tf.constant([])
         self.initial_state = None
         self.__dict__.update(tensors)
+        self.num_reward = num_reward
 
         vf_latent = vf_latent if vf_latent is not None else latent
         
@@ -71,8 +72,10 @@ class PolicyWithValue(object):
             self.vf = self.q
         else:
             # 每个状态只有一个V值
-            self.vf = fc(vf_latent, 'vf', 1)
-            self.vf = self.vf[:,0]
+            #self.vf = fc(vf_latent, 'vf', 1)
+            self.vf = fc(vf_latent, 'vf', self.num_reward)
+            print('multi reward v value',self.vf)
+            self.vf = self.vf[0]
     def _evaluate(self, variables, observation, **extra_feed):
         sess = self.sess
         feed_dict = {self.X: adjust_shape(self.X, observation)}
@@ -130,8 +133,8 @@ class PolicyWithValue(object):
         tf_util.load_state(load_path, sess=self.sess)
 
 # 创建policy网络
-def build_policy(env, policy_network, value_network=None,  normalize_observations=False, estimate_q=False, **policy_kwargs):
-    # 生成策略网络
+def build_policy(env, policy_network, value_network=None,  normalize_observations=False, estimate_q=False, num_reward = 1, **policy_kwargs):
+    # 生成策略网略
     if isinstance(policy_network, str):
         network_type = policy_network
         policy_network = get_network_builder(network_type)(**policy_kwargs)
@@ -188,6 +191,7 @@ def build_policy(env, policy_network, value_network=None,  normalize_observation
             vf_latent=vf_latent,
             sess=sess,
             estimate_q=estimate_q,
+            num_reward = num_reward,
             **extra_tensors
         )
         return policy
