@@ -15,6 +15,11 @@ from importlib import import_module
 
 from baselines.common.vec_env.vec_normalize import VecNormalize
 
+# add for trpo
+
+#import os
+#os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+
 try:
     from mpi4py import MPI
 except ImportError:
@@ -58,6 +63,12 @@ def train(args, extra_args):
     total_timesteps = int(args.num_timesteps)
     seed = args.seed
 
+    # 创建环境
+    env = build_env(args,extra_args)
+    extra_args.pop('num_reward')
+    extra_args.pop('reward_type')
+    print(extra_args)
+
     # 使用import_module导入包
     learn = get_learn_function(args.alg)
     alg_kwargs = get_learn_function_defaults(args.alg, env_type)
@@ -66,8 +77,7 @@ def train(args, extra_args):
     alg_kwargs.update(extra_args)
     #print(alg_kwargs)
 
-    # 创建环境
-    env = build_env(args)
+    
     if args.save_video_interval != 0:
         env = VecVideoRecorder(env, osp.join(logger.Logger.CURRENT.dir, "videos"), record_video_trigger=lambda x: x % args.save_video_interval == 0, video_length=args.save_video_length)
     
@@ -98,7 +108,7 @@ def train(args, extra_args):
 # 创建环境
 # 注意这里的atari环境要选noframeskip的，在算法里会执行四次step
 # 如果选择deterministic，在gym envs里就会执行四次
-def build_env(args):
+def build_env(args,extra_args):
     ncpu = multiprocessing.cpu_count()
     if sys.platform == 'darwin': ncpu //= 2
     nenv = args.num_env or ncpu
@@ -109,12 +119,12 @@ def build_env(args):
 
     if env_type in {'atari', 'retro'}:
         if alg == 'deepq':
-            env = make_env(env_id, env_type, seed=seed, wrapper_kwargs={'frame_stack': True})
+            env = make_env(env_id, env_type, seed=seed, wrapper_kwargs={'frame_stack': True}, num_reward = extra_args['num_reward'], reward_type = extra_args['reward_type'])
         elif alg == 'trpo_mpi':
-            env = make_env(env_id, env_type, seed=seed)
+            env = make_env(env_id, env_type, seed=seed, num_reward = extra_args['num_reward'], reward_type = extra_args['reward_type'])
         else:
             frame_stack_size = 4
-            env = make_vec_env(env_id, env_type, nenv, seed, gamestate=args.gamestate, reward_scale=args.reward_scale)
+            env = make_vec_env(env_id, env_type, nenv, seed, gamestate=args.gamestate, reward_scale=args.reward_scale, num_reward = extra_args['num_reward'], reward_type = extra_args['reward_type'])
             env = VecFrameStack(env, frame_stack_size)
 
     else:
@@ -125,7 +135,7 @@ def build_env(args):
        get_session(config=config)
 
        flatten_dict_observations = alg not in {'her'}
-       env = make_vec_env(env_id, env_type, args.num_env or 1, seed, reward_scale=args.reward_scale, flatten_dict_observations=flatten_dict_observations)
+       env = make_vec_env(env_id, env_type, args.num_env or 1, seed, reward_scale=args.reward_scale, flatten_dict_observations=flatten_dict_observations, num_reward = extra_args['num_reward'], reward_type = extra_args['reward_type'])
 
        if env_type == 'mujoco':
            env = VecNormalize(env)
@@ -224,7 +234,7 @@ def main(args):
     # play训练好的模型
     if args.play:
         logger.log("Running trained model")
-        env = build_env(args)
+        env = build_env(args,extra_args)
         obs = env.reset()
 
         state = model.initial_state if hasattr(model, 'initial_state') else None

@@ -23,7 +23,8 @@ def make_vec_env(env_id, env_type, num_env, seed,
                  start_index=0,
                  reward_scale=1.0,
                  flatten_dict_observations=True,
-                 gamestate=None):
+                 gamestate=None, 
+                 num_reward = 1,reward_type = 1):
     """
     Create a wrapped, monitored SubprocVecEnv for Atari and MuJoCo.
     """
@@ -39,7 +40,9 @@ def make_vec_env(env_id, env_type, num_env, seed,
             reward_scale=reward_scale,
             gamestate=gamestate,
             flatten_dict_observations=flatten_dict_observations,
-            wrapper_kwargs=wrapper_kwargs
+            wrapper_kwargs=wrapper_kwargs,
+            num_reward = num_reward,
+            reward_type = reward_type
         )
 
     set_global_seeds(seed)
@@ -49,11 +52,11 @@ def make_vec_env(env_id, env_type, num_env, seed,
         return DummyVecEnv([make_thunk(start_index)])
 
 
-def make_env(env_id, env_type, subrank=0, seed=None, reward_scale=1.0, gamestate=None, flatten_dict_observations=True, wrapper_kwargs=None):
+def make_env(env_id, env_type, subrank=0, seed=None, reward_scale=1.0, gamestate=None, flatten_dict_observations=True, wrapper_kwargs=None, num_reward = 1, reward_type = 1):
     mpi_rank = MPI.COMM_WORLD.Get_rank() if MPI else 0
     wrapper_kwargs = wrapper_kwargs or {}
     if env_type == 'atari':
-        env = make_atari(env_id)
+        env = make_atari(env_id,num_reward = num_reward)
     elif env_type == 'retro':
         import retro
         gamestate = gamestate or retro.State.DEFAULT
@@ -68,7 +71,7 @@ def make_env(env_id, env_type, subrank=0, seed=None, reward_scale=1.0, gamestate
     env.seed(seed + subrank if seed is not None else None)
     env = Monitor(env,
                   logger.get_dir() and os.path.join(logger.get_dir(), str(mpi_rank) + '.' + str(subrank)),
-                  allow_early_resets=True)
+                  allow_early_resets=True, num_reward = num_reward, reward_type = reward_type)
 
     if env_type == 'atari':
         env = wrap_deepmind(env, **wrapper_kwargs)

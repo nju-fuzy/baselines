@@ -13,7 +13,7 @@ class Monitor(Wrapper):
     EXT = "monitor.csv"
     f = None
 
-    def __init__(self, env, filename, allow_early_resets=False, reset_keywords=(), info_keywords=()):
+    def __init__(self, env, filename, allow_early_resets=False, reset_keywords=(), info_keywords=(), num_reward = 1, reward_type = 1):
         Wrapper.__init__(self, env=env)
         self.tstart = time.time()
         self.results_writer = ResultsWriter(
@@ -31,6 +31,8 @@ class Monitor(Wrapper):
         self.episode_times = []
         self.total_steps = 0
         self.current_reset_info = {} # extra info about the current episode, that was passed in during reset()
+        self.num_reward = num_reward
+        self.reward_type = reward_type
 
     def reset(self, **kwargs):
         self.reset_state()
@@ -53,13 +55,14 @@ class Monitor(Wrapper):
         if self.needs_reset:
             raise RuntimeError("Tried to step environment that needs reset")
         ob, rew, done, info = self.env.step(action)
-        self.update(ob, rew, done, info)
-        return (ob, rew, done, info)
+        self.update(ob, rew[self.reward_type - 1], done, info)
+        return (ob, rew[self.reward_type - 1], done, info)
 
     def update(self, ob, rew, done, info):
         self.rewards.append(rew)
         if done:
             self.needs_reset = True
+            # epnew 成为向量
             eprew = sum(self.rewards)
             eplen = len(self.rewards)
             epinfo = {"r": round(eprew, 6), "l": eplen, "t": round(time.time() - self.tstart, 6)}
