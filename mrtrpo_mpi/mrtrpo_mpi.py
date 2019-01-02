@@ -205,6 +205,7 @@ def learn(*,
     # entbonus 是entropy loss
     entbonus = ent_coef * meanent
     #################################
+    
     vferr = tf.reduce_mean(tf.square(pi.vf - ret))
 
     ratio = tf.exp(pi.pd.logp(ac) - oldpi.pd.logp(ac)) 
@@ -247,20 +248,25 @@ def learn(*,
         tangents.append(tf.reshape(flat_tangent[start:start+sz], shape))
         start += sz
     ####################################################################
-
+    
+    ####################################################################
     # 把kl散度梯度与变量乘积相加
     gvp = tf.add_n([tf.reduce_sum(g*tangent) for (g, tangent) in zipsame(klgrads, tangents)]) #pylint: disable=E1111
     # 把gvp的梯度展成向量
     fvp = U.flatgrad(gvp, var_list)
-    
+    ####################################################################
+
     # 用学习后的策略更新old策略
     assign_old_eq_new = U.function([],[], updates=[tf.assign(oldv, newv)
         for (oldv, newv) in zipsame(get_variables("oldpi"), get_variables("pi"))])
     
     # 计算loss
     compute_losses = U.function([ob, ac, atarg], losses)
+    # 计算loss和梯度
     compute_lossandgrad = U.function([ob, ac, atarg], losses + [U.flatgrad(optimgain, var_list)])
+    # 计算fvp
     compute_fvp = U.function([flat_tangent, ob, ac, atarg], fvp)
+    # 计算值网络的梯度
     compute_vflossandgrad = U.function([ob, ret], U.flatgrad(vferr, vf_var_list))
 
     @contextmanager
@@ -352,6 +358,7 @@ def learn(*,
 
         args = seg["ob"], seg["ac"], atarg
         fvpargs = [arr[::5] for arr in args]
+        # 这个函数计算fisher matrix 与向量 p 的 乘积
         def fisher_vector_product(p):
             return allmean(compute_fvp(p, *fvpargs)) + cg_damping * p
 
@@ -369,6 +376,7 @@ def learn(*,
             logger.log("Got zero gradient. not updating")
         else:
             with timed("cg"):
+            	# stepdir 是更新方向
                 stepdir = cg(fisher_vector_product, g, cg_iters=cg_iters, verbose=rank==0)
             assert np.isfinite(stepdir).all()
             shs = .5*stepdir.dot(fisher_vector_product(stepdir))
@@ -379,6 +387,7 @@ def learn(*,
             surrbefore = lossbefore[0]
             stepsize = 1.0
             thbefore = get_flat()
+            # 做10次搜索
             for _ in range(10):
                 thnew = thbefore + fullstep * stepsize
                 set_from_flat(thnew)
