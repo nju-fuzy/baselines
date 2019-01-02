@@ -182,7 +182,10 @@ def learn(*,
     # ----------------------------------------
     ob_space = env.observation_space
     ac_space = env.action_space
-
+    
+    #################################################################
+    # ob ac ret atarg 都是 placeholder
+    # ret atarg 此处应该是向量形式
     ob = observation_placeholder(ob_space)
 
     # 创建pi和oldpi
@@ -190,8 +193,12 @@ def learn(*,
         pi = policy(observ_placeholder=ob)
     with tf.variable_scope("oldpi"):
         oldpi = policy(observ_placeholder=ob)
-
-    atarg = tf.placeholder(dtype=tf.float32, shape=[None]) # Target advantage function (if applicable)
+    
+    # 每个reward都可以算一个atarg
+    mr_atarg = []
+    for i in range(num_reward):
+        atarg = tf.placeholder(dtype=tf.float32, shape=[None]) # Target advantage function (if applicable)
+        mr_atarg.append(atarg)
     ret = tf.placeholder(dtype=tf.float32, shape=[None]) # Empirical return
 
     ac = pi.pdtype.sample_placeholder([None])
@@ -206,19 +213,30 @@ def learn(*,
     entbonus = ent_coef * meanent
     #################################
     
+    ###########################################################
+    # vferr 用来更新 v 网络
     vferr = tf.reduce_mean(tf.square(pi.vf - ret))
 
     ratio = tf.exp(pi.pd.logp(ac) - oldpi.pd.logp(ac)) 
-    # advantage * pnew / pold
-    surrgain = tf.reduce_mean(ratio * atarg)
     
-    # optimgain是总的loss
-    optimgain = surrgain + entbonus
-    losses = [optimgain, meankl, entbonus, surrgain, meanent]
-    loss_names = ["optimgain", "meankl", "entloss", "surrgain", "entropy"]
-
+    # optimgain 用来更新 policy 网络, 应该每个reward有一个
+    # 计算multi reward loss
+    mr_optimgain = []
+    mr_losses = []
+    mr_losses_names = []
+    for i in range(num_reward):
+        # advantage * pnew / pold
+        surrgain = tf.reduce_mean(ratio * mr_atarg[i])
+        optimgain = surrgain + entbonus
+        mr_optimgain.append(optimgain)
+        mr_losses.extend([surrgain, optimgain])
+        loss_names.extend(["surrgain"+str(i+1),'optimgain' + str(i+1)])
+    mr_losses.extend([meankl, entbonus, meanent])
+    loss_names.extend(["meankl", "entloss", "entropy"])
+    ###########################################################
     dist = meankl
-
+    
+    # 定义要优化的变量和 V 网络 adam 优化器
     all_var_list = get_trainable_variables("pi")
     # var_list = [v for v in all_var_list if v.name.split("/")[1].startswith("pol")]
     # vf_var_list = [v for v in all_var_list if v.name.split("/")[1].startswith("vf")]
@@ -260,14 +278,16 @@ def learn(*,
     assign_old_eq_new = U.function([],[], updates=[tf.assign(oldv, newv)
         for (oldv, newv) in zipsame(get_variables("oldpi"), get_variables("pi"))])
     
-    # 计算loss
-    compute_losses = U.function([ob, ac, atarg], losses)
-    # 计算loss和梯度
-    compute_lossandgrad = U.function([ob, ac, atarg], losses + [U.flatgrad(optimgain, var_list)])
-    # 计算fvp
-    compute_fvp = U.function([flat_tangent, ob, ac, atarg], fvp)
-    # 计算值网络的梯度
-    compute_vflossandgrad = U.function([ob, ret], U.flatgrad(vferr, vf_var_list))
+    
+    for i in range(num_reward):
+        # 计算loss
+        compute_losses = U.function([ob, ac, mr_atarg[i]], losses)
+        # 计算loss和梯度
+        compute_lossandgrad = U.function([ob, ac, atarg], losses + [U.flatgrad(optimgain, var_list)])
+        # 计算fvp
+        compute_fvp = U.function([flat_tangent, ob, ac, atarg], fvp)
+        # 计算值网络的梯度
+        compute_vflossandgrad = U.function([ob, ret], U.flatgrad(vferr, vf_var_list))
 
     @contextmanager
     def timed(msg):
