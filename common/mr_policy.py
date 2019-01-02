@@ -74,7 +74,6 @@ class PolicyWithValue(object):
             # 每个状态只有一个V值
             #self.vf = fc(vf_latent, 'vf', 1)
             self.vf = fc(vf_latent, 'vf', self.num_reward)
-            print('multi reward v value',self.vf)
             self.vf = self.vf[0]
     def _evaluate(self, variables, observation, **extra_feed):
         sess = self.sess

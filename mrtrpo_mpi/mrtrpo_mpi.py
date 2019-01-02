@@ -11,6 +11,7 @@ from baselines.common.cg import cg
 from baselines.common.input import observation_placeholder
 from baselines.common.mr_policy import build_policy
 from contextlib import contextmanager
+from baselines.mrtrpo_mpi.optim import get_coefficient
 from pprint import pprint
 import pdb
 
@@ -45,8 +46,6 @@ def traj_segment_generator(pi, env, horizon, stochastic, num_reward = 1):
     while True:
         prevac = ac
         ac, vpred, _, _ = pi.step(ob, stochastic=stochastic)
-        print('ob',ob.shape)
-        print('vpred',vpred)
         # Slight weirdness here because we need value function at time T
         # before returning segment [0, T-1] so we get the correct
         # terminal value
@@ -67,7 +66,6 @@ def traj_segment_generator(pi, env, horizon, stochastic, num_reward = 1):
         prevacs[i] = prevac
 
         ob, rew, new, _ = env.step(ac)
-        print('rew',rew)
         rews[i] = rew
 
         cur_ep_ret += rew
@@ -157,7 +155,6 @@ def learn(*,
     learnt model
 
     '''
-    print("^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^")
 
     if MPI is not None:
         nworkers = MPI.COMM_WORLD.Get_size()
@@ -195,11 +192,8 @@ def learn(*,
         oldpi = policy(observ_placeholder=ob)
     
     # 每个reward都可以算一个atarg
-    mr_atarg = []
-    for i in range(num_reward):
-        atarg = tf.placeholder(dtype=tf.float32, shape=[None]) # Target advantage function (if applicable)
-        mr_atarg.append(atarg)
-    ret = tf.placeholder(dtype=tf.float32, shape=[None]) # Empirical return
+    atarg = tf.placeholder(dtype=tf.float32, shape=[None]) # Target advantage function (if applicable)
+    ret = tf.placeholder(dtype=tf.float32, shape=[None,num_reward]) # Empirical return
 
     ac = pi.pdtype.sample_placeholder([None])
     
@@ -216,23 +210,15 @@ def learn(*,
     ###########################################################
     # vferr 用来更新 v 网络
     vferr = tf.reduce_mean(tf.square(pi.vf - ret))
-
     ratio = tf.exp(pi.pd.logp(ac) - oldpi.pd.logp(ac)) 
-    
+    # advantage * pnew / pold
+    surrgain = tf.reduce_mean(ratio * atarg)
+
     # optimgain 用来更新 policy 网络, 应该每个reward有一个
-    # 计算multi reward loss
-    mr_optimgain = []
-    mr_losses = []
-    mr_losses_names = []
-    for i in range(num_reward):
-        # advantage * pnew / pold
-        surrgain = tf.reduce_mean(ratio * mr_atarg[i])
-        optimgain = surrgain + entbonus
-        mr_optimgain.append(optimgain)
-        mr_losses.extend([surrgain, optimgain])
-        loss_names.extend(["surrgain"+str(i+1),'optimgain' + str(i+1)])
-    mr_losses.extend([meankl, entbonus, meanent])
-    loss_names.extend(["meankl", "entloss", "entropy"])
+    optimgain = surrgain + entbonus
+    losses = [optimgain, meankl, entbonus, surrgain, meanent]
+    loss_names = ["optimgain", "meankl", "entloss", "surrgain", "entropy"]
+   
     ###########################################################
     dist = meankl
     
@@ -242,12 +228,12 @@ def learn(*,
     # vf_var_list = [v for v in all_var_list if v.name.split("/")[1].startswith("vf")]
     var_list = get_pi_trainable_variables("pi")
     vf_var_list = get_vf_trainable_variables("pi")
-    print(vf_var_list)
+
     vfadam = MpiAdam(vf_var_list)
 
     # 把变量展开成一个向量的类
     get_flat = U.GetFlat(var_list)
-    print(get_flat)
+
     # 这个类可以把一个向量分片赋值给var_list里的变量
     set_from_flat = U.SetFromFlat(var_list)
     # kl散度的梯度
@@ -279,15 +265,14 @@ def learn(*,
         for (oldv, newv) in zipsame(get_variables("oldpi"), get_variables("pi"))])
     
     
-    for i in range(num_reward):
-        # 计算loss
-        compute_losses = U.function([ob, ac, mr_atarg[i]], losses)
-        # 计算loss和梯度
-        compute_lossandgrad = U.function([ob, ac, atarg], losses + [U.flatgrad(optimgain, var_list)])
-        # 计算fvp
-        compute_fvp = U.function([flat_tangent, ob, ac, atarg], fvp)
-        # 计算值网络的梯度
-        compute_vflossandgrad = U.function([ob, ret], U.flatgrad(vferr, vf_var_list))
+    # 计算loss
+    compute_losses = U.function([ob, ac, atarg], losses)
+    # 计算loss和梯度
+    compute_lossandgrad = U.function([ob, ac, atarg], losses + [U.flatgrad(optimgain, var_list)])
+    # 计算fvp
+    compute_fvp = U.function([flat_tangent, ob, ac, atarg], fvp)
+    # 计算值网络的梯度
+    compute_vflossandgrad = U.function([ob, ret], U.flatgrad(vferr, vf_var_list))
 
     @contextmanager
     def timed(msg):
@@ -331,7 +316,7 @@ def learn(*,
     # ----------------------------------------
 
     # 这是一个生成数据的迭代器
-    seg_gen = traj_segment_generator(pi, env, 10, stochastic=True, num_reward = num_reward)
+    seg_gen = traj_segment_generator(pi, env, timesteps_per_batch, stochastic=True, num_reward = num_reward)
 
     episodes_so_far = 0
     timesteps_so_far = 0
@@ -365,71 +350,110 @@ def learn(*,
 
         # 计算累积回报
         add_vtarg_and_adv(seg, gamma, lam , num_reward = num_reward)
-
+###########$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$ToDo
         # ob, ac, atarg, ret, td1ret = map(np.concatenate, (obs, acs, atargs, rets, td1rets))
-        ob, ac, atarg, tdlamret = seg["ob"], seg["ac"], seg["adv"], seg["tdlamret"]
+
+        # ob, ac, atarg, tdlamret 的类型都是ndarray
+        #ob, ac, atarg, tdlamret = seg["ob"], seg["ac"], seg["adv"], seg["tdlamret"]
+        _, ac, atarg, tdlamret = seg["ob"], seg["ac"], seg["adv"], seg["tdlamret"]
+        #print(seg['ob'].shape,type(seg['ob']))
+        #print(seg['ac'].shape,type(seg['ac']))
+        #print(seg['adv'].shape,type(seg['adv']))
+        #print(seg["tdlamret"].shape,type(seg['tdlamret']))
         vpredbefore = seg["vpred"] # predicted value function before udpate
 
         # 标准化
-        atarg = (atarg - atarg.mean()) / atarg.std() # standardized advantage function estimate
-
+        atarg = (atarg - np.mean(atarg,axis = 0)) / np.std(atarg,axis=0) # standardized advantage function estimate
         if hasattr(pi, "ret_rms"): pi.ret_rms.update(tdlamret)
         if hasattr(pi, "ob_rms"): pi.ob_rms.update(ob) # update running mean/std for policy
+        
+        ## set old parameter values to new parameter values
+        assign_old_eq_new()
 
-        args = seg["ob"], seg["ac"], atarg
-        fvpargs = [arr[::5] for arr in args]
-        # 这个函数计算fisher matrix 与向量 p 的 乘积
-        def fisher_vector_product(p):
-            return allmean(compute_fvp(p, *fvpargs)) + cg_damping * p
+        G = None
+        S = None
+        mr_lossbefore = np.zeros((num_reward,len(loss_names)))
+        for i in range(num_reward):
+            args = seg["ob"], seg["ac"], atarg[:,i]
+            # 算是args的一个sample，每隔5个取出一个
+            fvpargs = [arr[::5] for arr in args]
+            
+            # 这个函数计算fisher matrix 与向量 p 的 乘积
+            def fisher_vector_product(p):
+                return allmean(compute_fvp(p, *fvpargs)) + cg_damping * p
 
-        assign_old_eq_new() # set old parameter values to new parameter values
-        with timed("computegrad"):
-            print("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
-            print(args)
-            *lossbefore, g = compute_lossandgrad(*args)
-        lossbefore = allmean(np.array(lossbefore))
-        g = allmean(g)
-
-        # g是目标函数的梯度
-        # 利用共轭梯度获得更新方向
-        if np.allclose(g, 0):
-            logger.log("Got zero gradient. not updating")
-        else:
-            with timed("cg"):
-            	# stepdir 是更新方向
-                stepdir = cg(fisher_vector_product, g, cg_iters=cg_iters, verbose=rank==0)
-            assert np.isfinite(stepdir).all()
-            shs = .5*stepdir.dot(fisher_vector_product(stepdir))
-            lm = np.sqrt(shs / max_kl)
-            # logger.log("lagrange multiplier:", lm, "gnorm:", np.linalg.norm(g))
-            fullstep = stepdir / lm
-            expectedimprove = g.dot(fullstep)
-            surrbefore = lossbefore[0]
-            stepsize = 1.0
-            thbefore = get_flat()
-            # 做10次搜索
-            for _ in range(10):
-                thnew = thbefore + fullstep * stepsize
-                set_from_flat(thnew)
-                meanlosses = surr, kl, *_ = allmean(np.array(compute_losses(*args)))
-                improve = surr - surrbefore
-                logger.log("Expected: %.3f Actual: %.3f"%(expectedimprove, improve))
-                if not np.isfinite(meanlosses).all():
-                    logger.log("Got non-finite value of losses -- bad!")
-                elif kl > max_kl * 1.5:
-                    logger.log("violated KL constraint. shrinking step.")
-                elif improve < 0:
-                    logger.log("surrogate didn't improve. shrinking step.")
-                else:
-                    logger.log("Stepsize OK!")
-                    break
-                stepsize *= .5
+            with timed("computegrad of " + str(i+1) +".th reward"):
+                *lossbefore, g = compute_lossandgrad(*args)
+            lossbefore = allmean(np.array(lossbefore))
+            mr_lossbefore[i] = lossbefore
+            g = allmean(g)
+            if isinstance(G,np.ndarray):
+                G = np.vstack((G,g))
             else:
-                logger.log("couldn't compute a good step")
-                set_from_flat(thbefore)
-            if nworkers > 1 and iters_so_far % 20 == 0:
-                paramsums = MPI.COMM_WORLD.allgather((thnew.sum(), vfadam.getflat().sum())) # list of tuples
-                assert all(np.allclose(ps, paramsums[0]) for ps in paramsums[1:])
+                G = g
+            
+            # g是目标函数的梯度
+            # 利用共轭梯度获得更新方向
+            if np.allclose(g, 0):
+                logger.log("Got zero gradient. not updating")
+            else:
+                with timed("cg of " + str(i+1) +".th reward"):
+            	    # stepdir 是更新方向
+                    stepdir = cg(fisher_vector_product, g, cg_iters=cg_iters, verbose=rank==0)
+                assert np.isfinite(stepdir).all()
+                if isinstance(S,np.ndarray):
+                    S = np.vstack((S,stepdir))
+                else:
+                    S = stepdir
+        coe = get_coefficient( G, S)
+
+        #################################################################
+        stepdir = np.dot(coe, S)
+        g = np.dot(coe, G)
+        lossbefore = np.dot(coe,mr_lossbefore)
+        #################################################################
+        
+        shs = .5*stepdir.dot(fisher_vector_product(stepdir))
+        lm = np.sqrt(shs / max_kl)
+        # logger.log("lagrange multiplier:", lm, "gnorm:", np.linalg.norm(g))
+        fullstep = stepdir / lm
+        expectedimprove = g.dot(fullstep)
+        surrbefore = lossbefore[0]
+        stepsize = 1.0
+        thbefore = get_flat()
+
+        def compute_mr_losses():
+            mr_losses = np.zeros((num_reward,len(loss_names)))
+            for i in range(num_reward):
+                args = seg["ob"], seg["ac"], atarg[:,i]
+                one_reward_loss = allmean(np.array(compute_losses(*args)))
+                mr_losses[i] = one_reward_loss
+            mr_loss = np.dot(coe,mr_losses)
+            return mr_loss
+
+        # 做10次搜索
+        for _ in range(10):
+            thnew = thbefore + fullstep * stepsize
+            set_from_flat(thnew)
+            meanlosses = surr, kl, *_ = allmean(np.array(compute_mr_losses()))
+            improve = surr - surrbefore
+            logger.log("Expected: %.3f Actual: %.3f"%(expectedimprove, improve))
+            if not np.isfinite(meanlosses).all():
+                logger.log("Got non-finite value of losses -- bad!")
+            elif kl > max_kl * 1.5:
+                logger.log("violated KL constraint. shrinking step.")
+            elif improve < 0:
+                logger.log("surrogate didn't improve. shrinking step.")
+            else:
+                logger.log("Stepsize OK!")
+                break
+            stepsize *= .5
+        else:
+            logger.log("couldn't compute a good step")
+            set_from_flat(thbefore)
+        if nworkers > 1 and iters_so_far % 20 == 0:
+            paramsums = MPI.COMM_WORLD.allgather((thnew.sum(), vfadam.getflat().sum())) # list of tuples
+            assert all(np.allclose(ps, paramsums[0]) for ps in paramsums[1:])
 
         for (lossname, lossval) in zip(loss_names, meanlosses):
             logger.record_tabular(lossname, lossval)
@@ -439,6 +463,9 @@ def learn(*,
             for _ in range(vf_iters):
                 for (mbob, mbret) in dataset.iterbatches((seg["ob"], seg["tdlamret"]),
                 include_final_partial_batch=False, batch_size=64):
+                    #with tf.Session() as sess:
+                    #    sess.run(tf.global_variables_initializer())
+                    #    print(sess.run(vferr,feed_dict={ob:mbob,ret:mbret}))
                     g = allmean(compute_vflossandgrad(mbob, mbret))
                     vfadam.update(g, vf_stepsize)
 
@@ -484,4 +511,5 @@ def get_vf_trainable_variables(scope):
 
 def get_pi_trainable_variables(scope):
     return [v for v in get_trainable_variables(scope) if 'pi' in v.name[len(scope):].split('/')]
+
 
