@@ -468,7 +468,6 @@ def learn(*,
                     #    print(sess.run(vferr,feed_dict={ob:mbob,ret:mbret}))
                     g = allmean(compute_vflossandgrad(mbob, mbret))
                     vfadam.update(g, vf_stepsize)
-
         logger.record_tabular("ev_tdlam_before", explained_variance(vpredbefore, tdlamret))
 
         lrlocal = (seg["ep_lens"], seg["ep_rets"]) # local values
@@ -487,14 +486,12 @@ def learn(*,
         episodes_so_far += len(lens)
         timesteps_so_far += sum(lens)
         iters_so_far += 1
-
         logger.record_tabular("EpisodesSoFar", episodes_so_far)
         logger.record_tabular("TimestepsSoFar", timesteps_so_far)
         logger.record_tabular("TimeElapsed", time.time() - tstart)
-
         if rank==0:
             logger.dump_tabular()
-
+        #pdb.set_trace()
     return pi
 
 def flatten_lists(listoflists):
