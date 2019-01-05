@@ -55,20 +55,28 @@ class Monitor(Wrapper):
         if self.needs_reset:
             raise RuntimeError("Tried to step environment that needs reset")
         ob, rew, done, info = self.env.step(action)
-        self.update(ob, rew[0], done, info)
+        self.update(ob, rew, done, info)
         if self.reward_type == 0:
             return (ob, rew, done, info)
         else:
             return (ob, rew[self.reward_type - 1], done, info)
 
     def update(self, ob, rew, done, info):
+        #print('-'*40)
+        #print('rew',type(rew),rew)
+        #print('info',type(info),info)
         self.rewards.append(rew)
+        #print('self rewards',len(self.rewards),self.rewards)
         if done:
             self.needs_reset = True
             # epnew 成为向量
             eprew = sum(self.rewards)
+            #print('self rewards',len(self.rewards),self.rewards)
+            #print('eprew',type(eprew),len(eprew),eprew)
             eplen = len(self.rewards)
-            epinfo = {"r": round(eprew, 6), "l": eplen, "t": round(time.time() - self.tstart, 6)}
+            #print('eplen',type(eplen),eplen)
+            epinfo = {"r": eprew, "l": eplen, "t": round(time.time() - self.tstart, 6)}
+            #epinfo = {"r": round(eprew, 6), "l": eplen, "t": round(time.time() - self.tstart, 6)}
             #print(epinfo)
             for k in self.info_keywords:
                 epinfo[k] = info[k]
@@ -78,7 +86,6 @@ class Monitor(Wrapper):
             #print(self.current_reset_info)
             epinfo.update(self.current_reset_info)
             self.results_writer.write_row(epinfo)
-
             if isinstance(info, dict):
                 info['episode'] = epinfo
             #print("epinfo",epinfo)

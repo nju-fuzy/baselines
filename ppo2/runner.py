@@ -44,7 +44,6 @@ class Runner(AbstractEnvRunner):
             infos 附加信息，剩余生命数
             '''
             self.obs[:], rewards, self.dones, infos = self.env.step(actions)
-            #print(infos)
             for info in infos:
                 maybeepinfo = info.get('episode')
                 if maybeepinfo: epinfos.append(maybeepinfo)

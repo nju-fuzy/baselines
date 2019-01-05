@@ -169,10 +169,11 @@ def learn(*,
             inter_op_parallelism_threads=cpus_per_worker,
             intra_op_parallelism_threads=cpus_per_worker
     ))
-
+    
+    set_global_seeds(seed)
     # 创建policy
     policy = build_policy(env, network, value_network='copy', num_reward = num_reward, **network_kwargs)
-    set_global_seeds(seed)
+    
 
     np.set_printoptions(precision=3)
     # Setup losses and stuff
@@ -357,8 +358,8 @@ def learn(*,
         #ob, ac, atarg, tdlamret = seg["ob"], seg["ac"], seg["adv"], seg["tdlamret"]
         _, ac, atarg, tdlamret = seg["ob"], seg["ac"], seg["adv"], seg["tdlamret"]
         #print(seg['ob'].shape,type(seg['ob']))
-        #print(seg['ac'].shape,type(seg['ac']))
-        #print(seg['adv'].shape,type(seg['adv']))
+        #print(seg['ac'],type(seg['ac']))
+        #print(seg['adv'],type(seg['adv']))
         #print(seg["tdlamret"].shape,type(seg['tdlamret']))
         vpredbefore = seg["vpred"] # predicted value function before udpate
 
@@ -406,7 +407,6 @@ def learn(*,
                 else:
                     S = stepdir
         coe = get_coefficient( G, S)
-
         #################################################################
         stepdir = np.dot(coe, S)
         g = np.dot(coe, G)

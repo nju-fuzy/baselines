@@ -12,6 +12,7 @@ except ImportError:
     MPI = None
 from baselines.ppo2.runner import Runner
 
+import pdb
 
 def constfn(val):
     def f(_):
@@ -159,8 +160,9 @@ def learn(*, network, env, total_timesteps, eval_env = None, seed=None, nsteps=2
         #print('masks',masks)
         if eval_env is not None:
             eval_obs, eval_returns, eval_masks, eval_actions, eval_values, eval_neglogpacs, eval_states, eval_epinfos = eval_runner.run() #pylint: disable=E0632
-
+        #print(epinfos)
         epinfobuf.extend(epinfos)
+        #pdb.set_trace()
         if eval_env is not None:
             eval_epinfobuf.extend(eval_epinfos)
         # Here what we're going to do is for each minibatch calculate the loss and append it.
@@ -193,7 +195,7 @@ def learn(*, network, env, total_timesteps, eval_env = None, seed=None, nsteps=2
                     slices = (arr[mbflatinds] for arr in (obs, returns, masks, actions, values, neglogpacs))
                     mbstates = states[mbenvinds]
                     mblossvals.append(model.train(lrnow, cliprangenow, *slices, mbstates))
-
+        #print('epinfobuf',epinfobuf)
         # Feedforward --> get losses --> update
         lossvals = np.mean(mblossvals, axis=0)
         # End timer
@@ -209,8 +211,14 @@ def learn(*, network, env, total_timesteps, eval_env = None, seed=None, nsteps=2
             logger.logkv("total_timesteps", update*nbatch)
             logger.logkv("fps", fps)
             logger.logkv("explained_variance", float(ev))
-            logger.logkv('eprewmean', safemean([epinfo['r'] for epinfo in epinfobuf]))
-            logger.logkv('eplenmean', safemean([epinfo['l'] for epinfo in epinfobuf]))
+            eprewmean=safemean([epinfo['r'] for epinfo in epinfobuf])
+            eplenmean=safemean([epinfo['l'] for epinfo in epinfobuf])
+            #print('eprewmean',eprewmean)
+            #print('eplenmean',eplenmean)
+            logger.logkv('eprewmean',eprewmean)
+            logger.logkv('eplenmean',eplenmean)
+            #logger.logkv('eprewmean', safemean([epinfo['r'] for epinfo in epinfobuf]))
+            #logger.logkv('eplenmean', safemean([epinfo['l'] for epinfo in epinfobuf]))
             if eval_env is not None:
                 logger.logkv('eval_eprewmean', safemean([epinfo['r'] for epinfo in eval_epinfobuf]) )
                 logger.logkv('eval_eplenmean', safemean([epinfo['l'] for epinfo in eval_epinfobuf]) )
@@ -229,7 +237,11 @@ def learn(*, network, env, total_timesteps, eval_env = None, seed=None, nsteps=2
     return model
 # Avoid division error when calculate the mean (in our case if epinfo is empty returns np.nan, not return an error)
 def safemean(xs):
-    return np.nan if len(xs) == 0 else np.mean(xs)
+    # 如果xs是ndarray，分别对每列求平均
+    if len(xs) > 0 and isinstance(xs[0],np.ndarray):
+        return np.mean(xs,0)
+    else:
+        return np.nan if len(xs) == 0 else np.mean(xs)
 
 
 
