@@ -5,6 +5,7 @@ from gym.core import Wrapper
 import time
 from glob import glob
 import csv
+import os
 import os.path as osp
 import json
 import numpy as np
@@ -16,11 +17,21 @@ class Monitor(Wrapper):
     def __init__(self, env, filename, allow_early_resets=False, reset_keywords=(), info_keywords=(), num_reward = 1, reward_type = 1):
         Wrapper.__init__(self, env=env)
         self.tstart = time.time()
+        self.myresults_writer = MyResultWriter(
+        filename,
+        env,
+        reset_keywords,
+        info_keywords,
+        num_reward
+        )
+
+        '''# orgin version
         self.results_writer = ResultsWriter(
             filename,
             header={"t_start": time.time(), 'env_id' : env.spec and env.spec.id},
             extra_keys=reset_keywords + info_keywords
         )
+        '''
         self.reset_keywords = reset_keywords
         self.info_keywords = info_keywords
         self.allow_early_resets = allow_early_resets
@@ -62,30 +73,25 @@ class Monitor(Wrapper):
             return (ob, rew[self.reward_type - 1], done, info)
 
     def update(self, ob, rew, done, info):
-        #print('-'*40)
-        #print('rew',type(rew),rew)
-        #print('info',type(info),info)
         self.rewards.append(rew)
-        #print('self rewards',len(self.rewards),self.rewards)
         if done:
             self.needs_reset = True
             # epnew 成为向量
             eprew = sum(self.rewards)
-            #print('self rewards',len(self.rewards),self.rewards)
-            #print('eprew',type(eprew),len(eprew),eprew)
             eplen = len(self.rewards)
-            #print('eplen',type(eplen),eplen)
+            
             epinfo = {"r": eprew, "l": eplen, "t": round(time.time() - self.tstart, 6)}
             #epinfo = {"r": round(eprew, 6), "l": eplen, "t": round(time.time() - self.tstart, 6)}
-            #print(epinfo)
             for k in self.info_keywords:
                 epinfo[k] = info[k]
             self.episode_rewards.append(eprew)
             self.episode_lengths.append(eplen)
             self.episode_times.append(time.time() - self.tstart)
-            #print(self.current_reset_info)
             epinfo.update(self.current_reset_info)
+            '''
             self.results_writer.write_row(epinfo)
+            '''
+            self.myresults_writer.mywrite(epinfo,self.num_reward)
             if isinstance(info, dict):
                 info['episode'] = epinfo
             #print("epinfo",epinfo)
@@ -119,10 +125,17 @@ class ResultsWriter(object):
             self.logger = None
         else:
             if not filename.endswith(Monitor.EXT):
+                #print('='*40)
+                #print('rr',filename)
                 if osp.isdir(filename):
                     filename = osp.join(filename, Monitor.EXT)
                 else:
                     filename = filename + "." + Monitor.EXT
+            #print('after:',filename)
+            #os.mkdir(filename)
+            if os.path.exists(filename):
+                os.remove(filename)
+            os.mknod(filename)
             self.f = open(filename, "wt")
             if isinstance(header, dict):
                 header = '# {} \n'.format(json.dumps(header))
@@ -132,11 +145,51 @@ class ResultsWriter(object):
             self.f.flush()
 
     def write_row(self, epinfo):
+        print('-'*40)
+        print('epinfo:',epinfo)
         if self.logger:
             self.logger.writerow(epinfo)
             self.f.flush()
 
-
+class MyResultWriter(object):
+    def __init__(self,filename,env,reset_keywords,info_keywords,num_reward):
+        #print('-'*40)
+        #print('old',filename)
+        #print(filename.split('SEED'))
+        self.results_writer=[]
+        part1, part2 =filename.split('SEED')[-2],filename.split('SEED')[-1]
+        #os.mkdir(part1)
+        for i in range(num_reward):
+            
+            new_filename=part1+'r'+str(i)+'-'+part2
+            #print('-'*40)
+            #print('new',new_filename)
+            #print(part2.split('/'))
+            new_dir=part1+'r'+str(i)+'-'+part2.split('/')[0]+'/'
+            #print('newdir',new_dir)
+            #print(os.path.exists(new_dir))
+            if not os.path.exists(new_dir):
+                os.mkdir(new_dir)
+            self.results_writer.append(ResultsWriter(
+                new_filename,
+                header={"t_start": time.time(), 'env_id' : env.spec and env.spec.id},
+                extra_keys=reset_keywords + info_keywords)
+            )
+    def mywrite(self,epinfo,num_reward):
+        for i in range(num_reward):
+            newepinfo={}
+            #newepinfo=epinfo
+            #print(np.size(epinfo['r']),epinfo['r'])
+            for key in epinfo.keys():
+                if key != 'r':
+                    newepinfo[key]=epinfo[key]
+                else:
+                    newepinfo['r']=epinfo['r'][i]
+            #print('newr',newepinfo['r'])
+            #print('-'*40)
+            #print(newepinfo.keys())
+            #print(newepinfo)
+            self.results_writer[i].write_row(newepinfo)
 
 def get_monitor_files(dir):
     return glob(osp.join(dir, "*" + Monitor.EXT))
