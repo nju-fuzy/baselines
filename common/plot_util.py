@@ -10,6 +10,7 @@ import pandas
 from collections import defaultdict, namedtuple
 from baselines.bench import monitor
 from baselines.logger import read_json, read_csv
+import pdb
 
 def smooth(y, radius, mode='two_sided', valid_only=False):
     '''
@@ -152,7 +153,7 @@ def symmetric_ema(xolds, yolds, low=None, high=None, n=512, decay_steps=1., low_
 Result = namedtuple('Result', 'monitor progress dirname metadata')
 Result.__new__.__defaults__ = (None,) * len(Result._fields)
 
-def load_results(root_dir_or_dirs, enable_progress=True, enable_monitor=True, verbose=False):
+def load_results(root_dir_or_dirs, enable_progress=True, enable_monitor=True, verbose=True):
     '''
     load summaries of runs from a list of directories (including subdirectories)
     Arguments:
@@ -197,8 +198,10 @@ def load_results(root_dir_or_dirs, enable_progress=True, enable_monitor=True, ve
                 progcsv = osp.join(dirname, "progress.csv")
                 if enable_progress:
                     if osp.exists(progjson):
+                        # 读取json
                         result['progress'] = pandas.DataFrame(read_json(progjson))
                     elif osp.exists(progcsv):
+                        # 读取csv
                         try:
                             result['progress'] = read_csv(progcsv)
                         except pandas.errors.EmptyDataError:
@@ -207,6 +210,7 @@ def load_results(root_dir_or_dirs, enable_progress=True, enable_monitor=True, ve
                         if verbose: print('skipping %s: no progress file'%dirname)
 
                 if enable_monitor:
+                    # 使用monitor的load方法读取monitor文件
                     try:
                         result['monitor'] = pandas.DataFrame(monitor.load_results(dirname))
                     except monitor.LoadMonitorResultsError:
@@ -214,6 +218,7 @@ def load_results(root_dir_or_dirs, enable_progress=True, enable_monitor=True, ve
                     except Exception as e:
                         print('exception loading monitor file in %s: %s'%(dirname, e))
 
+                # 如果读到了monitor或progress，就存到Result(namedtuple)里面
                 if result.get('monitor') is not None or result.get('progress') is not None:
                     allresults.append(Result(**result))
                     if verbose:
@@ -229,25 +234,46 @@ COLORS = ['blue', 'green', 'red', 'cyan', 'magenta', 'yellow', 'black', 'purple'
 
 
 def default_xy_fn(r):
+    # 对monitor的轨迹长度进行累加，作为横坐标
     x = np.cumsum(r.monitor.l)
+    # 对reward做smooth处理
     y = smooth(r.monitor.r, radius=10)
     return x,y
+
+def is_number(str):
+    try:
+        # 因为使用float有一个例外是'NaN'
+        if str=='NaN':
+            return False
+        float(str)
+        return True
+    except ValueError:
+        return False
+    
 
 def default_split_fn(r):
     import re
     # match name between slash and -<digits> at the end of the string
     # (slash in the beginning or -<digits> in the end or either may be missing)
-    match = re.search(r'[^/-]+(?=(-\d+)?\Z)', r.dirname)
+    #match = re.search(r'[^-/]+(?=(-\d+)?\Z)', r.dirname)
+    match = re.search(r'[^/]+(?=(-\d+)?\Z)', r.dirname)
     if match:
-        return match.group(0)
+        res =  match.group(0)
+        if is_number(res[-1]) and res[-2] == '-':
+            res = res[:-2]
+        return res
+
+def default_group_fn(r):
+    print(r.alg)
+    return r.alg
 
 def plot_results(
     allresults, *,
     xy_fn=default_xy_fn,
     split_fn=default_split_fn,
-    group_fn=default_split_fn,
+    group_fn=default_group_fn,
     average_group=False,
-    shaded_std=True,
+    shaded_std=False,
     shaded_err=True,
     figsize=None,
     legend_outside=False,
@@ -268,7 +294,7 @@ def plot_results(
     group_fn: function Result -> hashable   - function that converts results objects into keys to group curves by.
                                               That is, the results r for which group_fn(r) is the same will be put into the same group.
                                               Curves in the same group have the same color (if average_group is False), or averaged over
-                                              (if average_group is True). The default value is the same as default value for split_fn
+                                              (if average_group is True). The default value is the same as default value for
 
     average_group: bool                     - if True, will average the curves in the same group and plot the mean. Enables resampling
                                               (if resample = 0, will use 512 steps)
@@ -307,23 +333,27 @@ def plot_results(
     nrows = len(sk2r)
     ncols = 1
     figsize = figsize or (6, 6 * nrows)
+    # 创建一幅nrows行，ncols列的图
     f, axarr = plt.subplots(nrows, ncols, sharex=False, squeeze=False, figsize=figsize)
 
     groups = list(set(group_fn(result) for result in allresults))
-
     default_samples = 512
     if average_group:
         resample = resample or default_samples
-
+    
+    # 为每个sk2r里的元素画一张图
     for (isplit, sk) in enumerate(sorted(sk2r.keys())):
         g2l = {}
         g2c = defaultdict(int)
         sresults = sk2r[sk]
         gresults = defaultdict(list)
+        # 目前处于图的第isplit行，第0列
         ax = axarr[isplit][0]
         for result in sresults:
+            # 对同一个图划分group
             group = group_fn(result)
             g2c[group] += 1
+            # 把result的monitor转换成x，y
             x, y = xy_fn(result)
             if x is None: x = np.arange(len(y))
             x, y = map(np.asarray, (x, y))
@@ -339,6 +369,7 @@ def plot_results(
                 xys = gresults[group]
                 if not any(xys):
                     continue
+                # 根据group的index选取color
                 color = COLORS[groups.index(group) % len(COLORS)]
                 origxs = [xy[0] for xy in xys]
                 minxlen = min(map(len, origxs))

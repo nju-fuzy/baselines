@@ -18,6 +18,7 @@ class Monitor(Wrapper):
     def __init__(self, env, filename, allow_early_resets=False, reset_keywords=(), info_keywords=(), num_reward = 1, reward_type = 1):
         Wrapper.__init__(self, env=env)
         self.tstart = time.time()
+        '''
         self.myresults_writer = MyResultWriter(
         filename,
         env,
@@ -32,7 +33,7 @@ class Monitor(Wrapper):
             header={"t_start": time.time(), 'env_id' : env.spec and env.spec.id},
             extra_keys=reset_keywords + info_keywords
         )
-        ''' 
+        
         self.reset_keywords = reset_keywords
         self.info_keywords = info_keywords
         self.allow_early_resets = allow_early_resets
@@ -71,7 +72,7 @@ class Monitor(Wrapper):
             self.update(ob, rew, done, info)
             return (ob, rew, done, info)
         else:
-            self.update(ob, rew, done, info)
+            self.update(ob, rew[0], done, info)
         if self.reward_type == 0:
             return (ob, rew, done, info)
         else:
@@ -81,27 +82,27 @@ class Monitor(Wrapper):
         self.rewards.append(rew)
         if done:
             self.needs_reset = True
+            # epnew 成为向量
             eprew = sum(self.rewards)
             eplen = len(self.rewards)
+            ''' 
             epinfo = {"r": eprew, "l": eplen, "t": round(time.time() - self.tstart, 6)}
             '''
-            # origin version
             epinfo = {"r": round(eprew, 6), "l": eplen, "t": round(time.time() - self.tstart, 6)}
-            '''
             for k in self.info_keywords:
                 epinfo[k] = info[k]
             self.episode_rewards.append(eprew)
             self.episode_lengths.append(eplen)
             self.episode_times.append(time.time() - self.tstart)
             epinfo.update(self.current_reset_info)
-            '''
-            # origin version
+            
             self.results_writer.write_row(epinfo)
             '''
             self.myresults_writer.write_row(epinfo)
-            
+            '''
             if isinstance(info, dict):
                 info['episode'] = epinfo
+            #print("epinfo",epinfo)
         self.total_steps += 1
 
     def close(self):
@@ -150,6 +151,8 @@ class ResultsWriter(object):
             self.f.flush()
     def write_row(self, epinfo):
         if self.logger:
+            #print('file',self.f)
+            #print('epinfo',epinfo)
             self.logger.writerow(epinfo)
             self.f.flush()
 
@@ -160,11 +163,13 @@ class MyResultWriter(object):
         self.num_reward = num_reward
         part1, part2 =filename.split('SEED')[-2],filename.split('SEED')[-1]
         for i in range(num_reward):
-            new_dir=part1+'r'+str(i+1)+'-'+part2.split('/')[0]+'/'
-            if not os.path.exists(new_dir):
-                os.makedirs(new_dir)
+            new_dir=part1+'r'+str(i)+'-'+part2.split('/')[0]+'/'
+            if not  os.path.exists(new_dir):
+                os.mkdir(new_dir)
             #print('new_dir',new_dir)       # /home/lamda3/logs/freeway161400/r1-0/ 
-            new_filename=part1+'r'+str(i+1)+'-'+part2
+            #print('files:',os.listdir(new_dir))
+            
+            new_filename=part1+'r'+str(i)+'-'+part2
             #print('new_file',new_filename) # /home/lamda3/logs/freeway161400/r1-0/0.7
     
             self.results_writer.append(ResultsWriter(

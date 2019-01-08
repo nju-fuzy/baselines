@@ -46,7 +46,7 @@ def traj_segment_generator(models, env, horizon, stochastic, num_reward = 1):
 
     while True:
         prevac = ac
-        ac, vpred, _, _ = ensemble_step(ob, models, ac_space, stochastic=stochastic)
+        ac, vpred, _, _ = ensemble_step(ob, models, ac_space, num_reward,stochastic=stochastic)
         # Slight weirdness here because we need value function at time T
         # before returning segment [0, T-1] so we get the correct
         # terminal value
@@ -54,7 +54,7 @@ def traj_segment_generator(models, env, horizon, stochastic, num_reward = 1):
             yield {"ob" : obs, "rew" : rews, "vpred" : vpreds, "new" : news,
                     "ac" : acs, "prevac" : prevacs, "nextvpred": vpred * (1 - new),
                     "ep_rets" : ep_rets, "ep_lens" : ep_lens}
-            _, vpred, _, _ = ensemble_step(ob, models, ac_space, stochastic=stochastic)
+            _, vpred, _, _ = ensemble_step(ob, models, ac_space, num_reward, stochastic=stochastic)
             # Be careful!!! if you change the downstream algorithm to aggregate
             # several of these batches, then be sure to do a deepcopy
             ep_rets = []
@@ -79,13 +79,74 @@ def traj_segment_generator(models, env, horizon, stochastic, num_reward = 1):
             ob = env.reset()
         t += 1
 
-def ensemble_step(ob,models, ac_space, stochastic=True):
-    mr_pi = np.array()
+def ensemble_step(ob,models, ac_space, num_reward, stochastic=True):
+    mr_pi = []
+    vpred = np.zeros((num_reward))
     for i in range(len(models)):
-        pi, v, state, neglogp = models[i].pi.step(observation, stochastic = stochastic)
-        print(pi)
-        mr_pi
-        return a, v, state, neglogp
+        pi, v, state, neglogp = models[i].pi.dis_step(ob, stochastic = stochastic)
+        #ac, v, state, neglogp = models[i].pi.step(ob, stochastic=stochastic)
+        if isinstance(mr_pi,np.ndarray):
+            mr_pi = np.vstack((mr_pi,pi))
+        else:
+            mr_pi = pi
+        vpred[i] = v
+    mr_pi = mr_pi.T
+    exp_mr_pi = np.exp(mr_pi)
+    mr_pi = exp_mr_pi / np.sum(exp_mr_pi,axis = 0)
+    mr_pi = mr_pi.T
+    ac  = morl_ensemble(mr_pi,ensemble_type = 1)
+    return ac, vpred, state, neglogp
+
+
+def morl_ensemble(policy_actions, ensemble_type = 1, weights = None):
+    '''  Ensemble multiple policies to select one action
+    @Params:
+        policy_actions : numpy.array, shape = (n_policies, n_actions)
+          every row is a distribution on actions, policy for one reward
+        ensemble_type : int
+          1 : linear ensemble
+              a = argmax_a \sum_i \frac{1}{n_policies} policy_actions_{i,a}
+          2 : vote by majority
+              (1) for every i-th policy:
+                    a_i = argmax_a policy_actions_{i}
+              (2) select majority policies from {a_i}
+          3 : vote by rank
+              (1) transform policy_actions_{i, a} to its rank in policy_actions_{i}
+              (2) p_{i, a} = \frac{n_actions - rank(a)}{n_policies - 1}
+              (3) linear ensemble p_{i, a}
+        weights : numpy.array shape = (n_policies,)
+          the weights of every policy, default 1 / n_policies
+    @Return:
+        action_index : int, range of [0, n_actions - 1]
+    '''
+    n_policies, n_actions = policy_actions.shape
+
+    for i in range(n_policies):
+        assert abs(np.sum(policy_actions[i]) - 1.0) < 1e-6, "The {}-th policy_actions is not a distribution, row_sum must be 1.0".format(i)
+
+    if not isinstance(weights, np.ndarray):
+        weights = np.ones(n_policies) / n_policies
+
+    if ensemble_type == 1:
+        action_index = np.argmax(np.dot(policy_actions.transpose(), weights))
+    elif ensemble_type == 2:
+        votes = np.zeros(n_actions)
+        max_index = np.argmax(policy_actions, axis = 1)
+
+        for i in range(n_policies):
+            votes[max_index[i]] += weights[i]
+
+        # all actions have the same votes
+        if len(np.unique(votes)) == 1:
+            action_index = np.random.randint(0, n_actions)
+        else:
+            action_index = np.argmax(votes)
+    elif ensemble_type == 3:
+        rank = np.argsort(np.argsort(policy_actions, axis = 1), axis = 1)
+        rank = rank / (n_policies - 1)
+        action_index = np.argmax(np.dot(rank.transpose(), weights))
+
+    return action_index
 
 def add_vtarg_and_adv(seg, gamma, lam, num_reward = 1):
     new = np.append(seg["new"], 0) # last element is only used for last vtarg, but we already zeroed it if last new = 1
@@ -171,6 +232,15 @@ def learn(*,
     else:
         nworkers = 1
         rank = 0
+    @contextmanager
+    def timed(msg):
+        if rank == 0:
+            print(colorize(msg, color='magenta'))
+            tstart = time.time()
+            yield
+            print(colorize("done in %.3f seconds"%(time.time() - tstart), color='magenta'))
+        else:
+            yield
 
     cpus_per_worker = 1
     U.get_session(config=tf.ConfigProto(
@@ -192,7 +262,7 @@ def learn(*,
     
     trpo_model = []
     for i in range(num_reward):
-        trpo_model.append(trpo(policy, ob_space, ac_space, max_kl=max_kl, cg_iters=cg_iters,
+        trpo_model.append(trpo(timed, policy, ob_space, ac_space, max_kl=max_kl, cg_iters=cg_iters,
         ent_coef=ent_coef,cg_damping=cg_damping,vf_stepsize=vf_stepsize,vf_iters =vf_iters,load_path=load_path,num_reward=num_reward,index = i))
     # 这是一个生成数据的迭代器
     seg_gen = traj_segment_generator(trpo_model, env, timesteps_per_batch, stochastic=True, num_reward = num_reward)
@@ -228,7 +298,9 @@ def learn(*,
 
         # 计算累积回报
         add_vtarg_and_adv(seg, gamma, lam , num_reward = num_reward)
-        
+
+        vpredbefore = seg["vpred"]
+        tdlamret = seg["tdlamret"]
         for i in range(num_reward):
             trpo_model[i].train(seg["ob"], seg["ac"], seg["adv"][:,i], seg["tdlamret"][:,i])
 
@@ -260,6 +332,5 @@ def learn(*,
 
 def flatten_lists(listoflists):
     return [el for list_ in listoflists for el in list_]
-
 
 

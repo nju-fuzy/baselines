@@ -9,7 +9,6 @@ from baselines.common import set_global_seeds
 from baselines.common.mpi_adam import MpiAdam
 from baselines.common.cg import cg
 from baselines.common.input import observation_placeholder
-from baselines.common.mr_policy import build_policy
 from contextlib import contextmanager
 from baselines.mrtrpo_mpi.optim import get_coefficient
 from pprint import pprint
@@ -22,7 +21,7 @@ except ImportError:
 
 
 class trpo(object):
-    def __init__(self, policy, ob_space, ac_space, max_kl=0.001, cg_iters=10,
+    def __init__(self, timed, policy, ob_space, ac_space, max_kl=0.001, cg_iters=10,
         ent_coef=0.0,cg_damping=1e-2,vf_stepsize=3e-4,vf_iters =3,load_path=None, num_reward=1, index=1):
         if MPI is not None:
             nworkers = MPI.COMM_WORLD.Get_size()
@@ -44,14 +43,14 @@ class trpo(object):
         ob = observation_placeholder(ob_space)
 
         # 创建pi和oldpi
-        with tf.variable_scope("pi"):
+        with tf.variable_scope(str(index)+"pi"):
             pi = policy(observ_placeholder=ob)
-        with tf.variable_scope("oldpi"):
+        with tf.variable_scope(str(index)+"oldpi"):
             oldpi = policy(observ_placeholder=ob)
         
         # 每个reward都可以算一个atarg
         atarg = tf.placeholder(dtype=tf.float32, shape=[None]) # Target advantage function (if applicable)
-        ret = tf.placeholder(dtype=tf.float32, shape=[None,num_reward]) # Empirical return
+        ret = tf.placeholder(dtype=tf.float32, shape=[None]) # Empirical return
 
         ac = pi.pdtype.sample_placeholder([None])
         
@@ -81,11 +80,11 @@ class trpo(object):
         dist = meankl
         
         # 定义要优化的变量和 V 网络 adam 优化器
-        all_var_list = get_trainable_variables("pi")
+        all_var_list = get_trainable_variables(str(index)+"pi")
         # var_list = [v for v in all_var_list if v.name.split("/")[1].startswith("pol")]
         # vf_var_list = [v for v in all_var_list if v.name.split("/")[1].startswith("vf")]
-        var_list = get_pi_trainable_variables("pi")
-        vf_var_list = get_vf_trainable_variables("pi")
+        var_list = get_pi_trainable_variables(str(index)+"pi")
+        vf_var_list = get_vf_trainable_variables(str(index)+"pi")
 
         vfadam = MpiAdam(vf_var_list)
 
@@ -120,7 +119,7 @@ class trpo(object):
 
         # 用学习后的策略更新old策略
         assign_old_eq_new = U.function([],[], updates=[tf.assign(oldv, newv)
-            for (oldv, newv) in zipsame(get_variables("oldpi"), get_variables("pi"))])
+            for (oldv, newv) in zipsame(get_variables(str(index)+"oldpi"), get_variables(str(index)+"pi"))])
         
         
         # 计算loss
@@ -174,6 +173,7 @@ class trpo(object):
         
         self.rank = rank
         self.index = index
+        self.timed = timed
 
     def train(self,ob, ac, atarg, tdlamret):
 
@@ -193,7 +193,7 @@ class trpo(object):
         def fisher_vector_product(p):
             return allmean(self.compute_fvp(p, *fvpargs)) + self.cg_damping * p
 
-        with timed("computegrad of " + str(i+1) +".th reward"):
+        with self.timed("computegrad of " + str(self.index+1) +".th reward"):
             *lossbefore, g = self.compute_lossandgrad(*args)
         lossbefore = allmean(np.array(lossbefore))
         g = allmean(g)
@@ -203,13 +203,13 @@ class trpo(object):
         if np.allclose(g, 0):
             logger.log("Got zero gradient. not updating")
         else:
-            with timed("cg of " + str(index+1) +".th reward"):
+            with self.timed("cg of " + str(self.index+1) +".th reward"):
         	    # stepdir 是更新方向
                 stepdir = cg(fisher_vector_product, g, cg_iters=self.cg_iters, verbose=self.rank==0)
             assert np.isfinite(stepdir).all()
         
             shs = .5*stepdir.dot(fisher_vector_product(stepdir))
-            lm = np.sqrt(shs / max_kl)
+            lm = np.sqrt(shs / self.max_kl)
             # logger.log("lagrange multiplier:", lm, "gnorm:", np.linalg.norm(g))
             fullstep = stepdir / lm
             expectedimprove = g.dot(fullstep)
@@ -226,7 +226,7 @@ class trpo(object):
                 logger.log("Expected: %.3f Actual: %.3f"%(expectedimprove, improve))
                 if not np.isfinite(meanlosses).all():
                     logger.log("Got non-finite value of losses -- bad!")
-                elif kl > max_kl * 1.5:
+                elif kl > self.max_kl * 1.5:
                     logger.log("violated KL constraint. shrinking step.")
                 elif improve < 0:
                     logger.log("surrogate didn't improve. shrinking step.")
@@ -237,8 +237,7 @@ class trpo(object):
             else:
                 logger.log("couldn't compute a good step")
                 self.set_from_flat(thbefore)
-
-        with timed("vf"):
+        with self.timed("vf"):
             for _ in range(self.vf_iters):
                 for (mbob, mbret) in dataset.iterbatches((ob , tdlamret),
                 include_final_partial_batch=False, batch_size=64):
@@ -246,7 +245,7 @@ class trpo(object):
                     #    sess.run(tf.global_variables_initializer())
                     #    print(sess.run(vferr,feed_dict={ob:mbob,ret:mbret}))
                     g = allmean(self.compute_vflossandgrad(mbob, mbret))
-                    self.vfadam.update(g, vf_stepsize)
+                    self.vfadam.update(g, self.vf_stepsize)
 
 
 
@@ -262,19 +261,11 @@ def get_vf_trainable_variables(scope):
 def get_pi_trainable_variables(scope):
     return [v for v in get_trainable_variables(scope) if 'pi' in v.name[len(scope):].split('/')]
 
-@contextmanager
-def timed(msg):
-    if rank == 0:
-        print(colorize(msg, color='magenta'))
-        tstart = time.time()
-        yield
-        print(colorize("done in %.3f seconds"%(time.time() - tstart), color='magenta'))
-    else:
-        yield
 
 def allmean(x):
     assert isinstance(x, np.ndarray)
     if MPI is not None:
+        nworkers = MPI.COMM_WORLD.Get_size()
         out = np.empty_like(x)
         MPI.COMM_WORLD.Allreduce(x, out, op=MPI.SUM)
         out /= nworkers

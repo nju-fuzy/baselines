@@ -7,6 +7,7 @@ import time
 import datetime
 import tempfile
 from collections import defaultdict
+import numpy as np
 
 DEBUG = 10
 INFO = 20
@@ -156,6 +157,8 @@ class TensorBoardOutputFormat(KVWriter):
 
     def writekvs(self, kvs):
         def summary_val(k, v):
+            if isinstance(v,np.ndarray):
+                v = v[0]
             kwargs = {'tag': k, 'simple_value': float(v)}
             return self.tf.Summary.Value(**kwargs)
         summary = self.tf.Summary(value=[summary_val(k, v) for k, v in kvs.items()])
