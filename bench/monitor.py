@@ -160,11 +160,14 @@ class MyResultWriter(object):
         self.num_reward = num_reward
         part1, part2 =filename.split('SEED')[-2],filename.split('SEED')[-1]
         for i in range(num_reward):
-            new_dir=part1+'r'+str(i+1)+'-'+part2.split('/')[0]+'/'
-            if not os.path.exists(new_dir):
-                os.makedirs(new_dir)
+            # new_dir=part1+'r'+str(i+1)+'-'+part2.split('/')[0]+'/'
+            # print('new dir',new_dir)
+            # if not os.path.exists(new_dir):
+            #     print("don't exist")
+            #     os.makedirs(new_dir)
             #print('new_dir',new_dir)       # /home/lamda3/logs/freeway161400/r1-0/ 
             new_filename=part1+'r'+str(i+1)+'-'+part2
+            print(new_filename)
             #print('new_file',new_filename) # /home/lamda3/logs/freeway161400/r1-0/0.7
     
             self.results_writer.append(ResultsWriter(

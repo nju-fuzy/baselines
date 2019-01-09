@@ -14,7 +14,7 @@ from baselines import logger
 from importlib import import_module
 
 from baselines.common.vec_env.vec_normalize import VecNormalize
-
+import os
 # add for trpo
 
 #import os
@@ -231,6 +231,12 @@ def main(args):
         logger.configure(format_strs=[])
         rank = MPI.COMM_WORLD.Get_rank()
 
+    filename = logger.get_dir()
+    part1, part2 =filename.split('SEED')[-2],filename.split('SEED')[-1]
+    for i in range(args.num_reward):
+        new_dir=part1+'r'+str(i+1)+'-'+part2.split('/')[0]+'/'
+        if not os.path.exists(new_dir):
+            os.makedirs(new_dir)
     # 调用train函数训练模型
     model, env = train(args, extra_args)
     env.close()
