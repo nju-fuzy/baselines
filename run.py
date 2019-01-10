@@ -169,7 +169,7 @@ def get_env_type(env_id):
 
 # 默认的网络类型
 def get_default_network(env_type):
-    if env_type in {'atari', 'retro'}:
+    if env_type in {'atari', 'retro','gym_ple'}:
         return 'cnn'
     else:
         return 'mlp'
