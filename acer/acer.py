@@ -340,8 +340,7 @@ def learn(network, env, seed=None, nsteps=20, total_timesteps=int(80e6), q_coef=
 
     '''
 
-    print("Running Acer Simple")
-    print(locals())
+    print('EnvAlgoArgs : Args {}'.format(locals()))
     set_global_seeds(seed)
     if not isinstance(env, VecFrameStack):
         env = VecFrameStack(env, 1)

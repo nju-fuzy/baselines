@@ -152,6 +152,7 @@ def learn(*,
 
     '''
 
+    print('EnvAlgoArgs : Args {}'.format(locals()))
     if MPI is not None:
         nworkers = MPI.COMM_WORLD.Get_size()
         rank = MPI.COMM_WORLD.Get_rank()
