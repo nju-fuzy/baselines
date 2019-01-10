@@ -1,6 +1,19 @@
-from baselines.common.models import mlp, cnn_small
+from baselines.common.models import mlp, cnn_small, cnn
 
 
+# def atari():
+#     return dict(
+#         network = cnn_small(),
+#         timesteps_per_batch=512,
+#         max_kl=0.001,
+#         cg_iters=10,
+#         cg_damping=1e-3,
+#         gamma=0.98,
+#         lam=1.0,
+#         vf_iters=3,
+#         vf_stepsize=1e-4,
+#         entcoeff=0.00,
+#     )
 def atari():
     return dict(
         network = cnn_small(),
@@ -8,11 +21,25 @@ def atari():
         max_kl=0.001,
         cg_iters=10,
         cg_damping=1e-3,
-        gamma=0.98,
+        gamma=0.99,
         lam=1.0,
-        vf_iters=3,
+        vf_iters=5,
         vf_stepsize=1e-4,
-        entcoeff=0.00,
+        entcoeff=0.01,
+    )
+
+def gym_ple():
+    return dict(
+        network = cnn_small(),
+        timesteps_per_batch=512,
+        max_kl=0.001,
+        cg_iters=10,
+        cg_damping=1e-3,
+        gamma=0.99,
+        lam=1.0,
+        vf_iters=5,
+        vf_stepsize=1e-4,
+        entcoeff=0.01,
     )
 
 def mujoco():
