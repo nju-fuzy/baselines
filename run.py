@@ -127,7 +127,7 @@ def build_env(args):
     seed = args.seed
 
     env_type, env_id = get_env_type(args.env)
-    if env_type in {'atari', 'retro'}:
+    if env_type in {'atari', 'retro', 'gym_ple'}:
         if alg == 'deepq':
             env = make_env(env_id, env_type, seed=seed, wrapper_kwargs={'frame_stack': True}, num_reward = args.num_reward, reward_type = args.reward_type)
             print("env with frame_stack")

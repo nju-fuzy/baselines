@@ -232,6 +232,16 @@ def make_atari(env_id, timelimit=True, num_reward = 1):
     env = MaxAndSkipEnv(env, skip=4,num_reward = num_reward)
     return env
 
+def make_ple(env_id, num_reward = 1):
+    env = gym.make(env_id)
+    env = WarpFrame(env)
+    return env
+
+def wrap_ple(env,episode_life=True, clip_rewards=True, frame_stack=False, scale=False):
+    if frame_stack:
+        env = FrameStack(env, 4)
+    return env
+
 def wrap_deepmind(env, episode_life=True, clip_rewards=True, frame_stack=False, scale=False):
     """Configure environment for DeepMind-style Atari.
     """

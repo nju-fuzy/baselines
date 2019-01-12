@@ -13,7 +13,7 @@ from gym.wrappers import FlattenDictWrapper
 from baselines import logger
 from baselines.bench import Monitor
 from baselines.common import set_global_seeds
-from baselines.common.atari_wrappers import make_atari, wrap_deepmind
+from baselines.common.atari_wrappers import make_atari, wrap_deepmind, make_ple, wrap_ple
 from baselines.common.vec_env.subproc_vec_env import SubprocVecEnv
 from baselines.common.vec_env.dummy_vec_env import DummyVecEnv
 from baselines.common import retro_wrappers
@@ -61,6 +61,8 @@ def make_env(env_id, env_type, subrank=0, seed=None, reward_scale=1.0, gamestate
         import retro
         gamestate = gamestate or retro.State.DEFAULT
         env = retro_wrappers.make_retro(game=env_id, max_episode_steps=10000, use_restricted_actions=retro.Actions.DISCRETE, state=gamestate)
+    elif env_type == 'gym_ple':
+        env = make_ple(env_id,num_reward = num_reward)
     else:
         env = gym.make(env_id)
 
@@ -75,6 +77,8 @@ def make_env(env_id, env_type, subrank=0, seed=None, reward_scale=1.0, gamestate
 
     if env_type == 'atari':
         env = wrap_deepmind(env, **wrapper_kwargs)
+    elif env_type == 'gym_ple':
+        env = wrap_ple(env, **wrapper_kwargs)
     elif env_type == 'retro':
         env = retro_wrappers.wrap_deepmind_retro(env, **wrapper_kwargs)
 
