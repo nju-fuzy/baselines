@@ -139,8 +139,8 @@ class ResultsWriter(object):
             #if os.path.exists(filename):
                 #print('remove','!'*50)
                 #os.remove(filename)
-            if not os.path.exists(filename):
-                os.mknod(filename)
+            #if not os.path.exists(filename):
+            #    os.mknod(filename)
             self.f = open(filename, "wt")
             if isinstance(header, dict):
                 header = '# {} \n'.format(json.dumps(header))
@@ -148,6 +148,8 @@ class ResultsWriter(object):
             self.logger = csv.DictWriter(self.f, fieldnames=('r', 'l', 't')+tuple(extra_keys))
             self.logger.writeheader()
             self.f.flush()
+
+
     def write_row(self, epinfo):
         if self.logger:
             self.logger.writerow(epinfo)
@@ -167,7 +169,6 @@ class MyResultWriter(object):
             #     os.makedirs(new_dir)
             #print('new_dir',new_dir)       # /home/lamda3/logs/freeway161400/r1-0/ 
             new_filename=part1+'r'+str(i+1)+'-'+part2
-            print(new_filename)
             #print('new_file',new_filename) # /home/lamda3/logs/freeway161400/r1-0/0.7
     
             self.results_writer.append(ResultsWriter(

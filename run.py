@@ -130,12 +130,15 @@ def build_env(args):
     if env_type in {'atari', 'retro'}:
         if alg == 'deepq':
             env = make_env(env_id, env_type, seed=seed, wrapper_kwargs={'frame_stack': True}, num_reward = args.num_reward, reward_type = args.reward_type)
+            print("env with frame_stack")
         elif alg in ['trpo_mpi','mrtrpo_mpi','ensemble_rl']:
             env = make_env(env_id, env_type, seed=seed, num_reward = args.num_reward, reward_type = args.reward_type)
+            print("normal env")
         else:
             frame_stack_size = 4
             env = make_vec_env(env_id, env_type, nenv, seed, gamestate=args.gamestate, reward_scale=args.reward_scale, num_reward = args.num_reward, reward_type = args.reward_type)
             env = VecFrameStack(env, frame_stack_size)
+            print("VecFrameStack env")
 
     else:
        config = tf.ConfigProto(allow_soft_placement=True,
@@ -146,7 +149,7 @@ def build_env(args):
 
        flatten_dict_observations = alg not in {'her'}
        env = make_vec_env(env_id, env_type, args.num_env or 1, seed, reward_scale=args.reward_scale, flatten_dict_observations=flatten_dict_observations, num_reward = args.num_reward, reward_type = args.reward_type)
-
+       print("make_vec_env")
        if env_type == 'mujoco':
            env = VecNormalize(env)
 
@@ -235,8 +238,7 @@ def main(args):
     part1, part2 =filename.split('SEED')[-2],filename.split('SEED')[-1]
     for i in range(args.num_reward):
         new_dir=part1+'r'+str(i+1)+'-'+part2.split('/')[0]+'/'
-        if not os.path.exists(new_dir):
-            os.makedirs(new_dir)
+        os.makedirs(new_dir, exist_ok = True)
     # 调用train函数训练模型
     model, env = train(args, extra_args)
     env.close()
