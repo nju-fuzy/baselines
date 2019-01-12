@@ -180,6 +180,7 @@ def learn(
     '''
 
 
+    print('EnvAlgoArgs : Args {}'.format(locals()))
 
     set_global_seeds(seed)
 

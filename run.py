@@ -88,7 +88,7 @@ def train(args, extra_args):
         if alg_kwargs.get('network') is None:
             alg_kwargs['network'] = get_default_network(env_type)
 
-    print('Training {} on {}:{} with arguments \n{}'.format(args.alg, env_type, env_id, alg_kwargs))
+    print('EnvAlgoArgs : Training {} on {}:{} with arguments {}'.format(args.alg, env_type, env_id, alg_kwargs))
     #print(alg_kwargs)
     '''
     训练模型,提供的参数是seed 和 timesteps and
