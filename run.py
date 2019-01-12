@@ -18,7 +18,8 @@ import os
 # add for trpo
 
 #import os
-#os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+# 屏蔽通知信息和警告信息
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
 # add for tensorflow
 gpu_options = tf.GPUOptions(allow_growth=True)
