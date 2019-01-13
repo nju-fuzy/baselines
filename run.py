@@ -140,19 +140,21 @@ def build_env(args):
             env = make_vec_env(env_id, env_type, nenv, seed, gamestate=args.gamestate, reward_scale=args.reward_scale, num_reward = args.num_reward, reward_type = args.reward_type)
             env = VecFrameStack(env, frame_stack_size)
             print("VecFrameStack env")
-
+    elif alg in ['mrtrpo_mpi', 'ensemble_rl']:
+        env = make_env(env_id, env_type, seed=seed, num_reward = args.num_reward, reward_type = args.reward_type)
+        print("normal env")
     else:
-       config = tf.ConfigProto(allow_soft_placement=True,
+        config = tf.ConfigProto(allow_soft_placement=True,
                                intra_op_parallelism_threads=1,
                                inter_op_parallelism_threads=1)
-       config.gpu_options.allow_growth = True
-       get_session(config=config)
+        config.gpu_options.allow_growth = True
+        get_session(config=config)
 
-       flatten_dict_observations = alg not in {'her'}
-       env = make_vec_env(env_id, env_type, args.num_env or 1, seed, reward_scale=args.reward_scale, flatten_dict_observations=flatten_dict_observations, num_reward = args.num_reward, reward_type = args.reward_type)
-       print("make_vec_env")
-       if env_type == 'mujoco':
-           env = VecNormalize(env)
+        flatten_dict_observations = alg not in {'her'}
+        env = make_vec_env(env_id, env_type, args.num_env or 1, seed, reward_scale=args.reward_scale, flatten_dict_observations=flatten_dict_observations, num_reward = args.num_reward, reward_type = args.reward_type)
+        print("make_vec_env")
+        if env_type == 'mujoco':
+            env = VecNormalize(env)
 
     return env
 
