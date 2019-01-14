@@ -174,7 +174,8 @@ def learn(*,
     # 创建policy
     policy = build_policy(env, network, value_network='copy', num_reward = num_reward, **network_kwargs)
     
-
+    filename = logger.get_dir()
+    print(filename)
     np.set_printoptions(precision=3)
     # Setup losses and stuff
     # ----------------------------------------
@@ -407,6 +408,12 @@ def learn(*,
                 else:
                     S = stepdir
         coe = get_coefficient( G, S)
+        #根据梯度的夹角调整参数
+        GG = np.dot(G, G.T)
+        D = np.sqrt(np.diag(1/np.diag(GG)))
+        GG = np.dot(np.dot(D,G),D)
+        adj = np.sum(GG) / (num_reward) ^ 2
+        adj_max_kl = adj * max_kl
         #################################################################
         stepdir = np.dot(coe, S)
         g = np.dot(coe, G)
@@ -414,7 +421,7 @@ def learn(*,
         #################################################################
         
         shs = .5*stepdir.dot(fisher_vector_product(stepdir))
-        lm = np.sqrt(shs / max_kl)
+        lm = np.sqrt(shs / adj_max_kl)
         # logger.log("lagrange multiplier:", lm, "gnorm:", np.linalg.norm(g))
         fullstep = stepdir / lm
         expectedimprove = g.dot(fullstep)
@@ -440,7 +447,7 @@ def learn(*,
             logger.log("Expected: %.3f Actual: %.3f"%(expectedimprove, improve))
             if not np.isfinite(meanlosses).all():
                 logger.log("Got non-finite value of losses -- bad!")
-            elif kl > max_kl * 1.5:
+            elif kl > adj_max_kl * 1.5:
                 logger.log("violated KL constraint. shrinking step.")
             elif improve < 0:
                 logger.log("surrogate didn't improve. shrinking step.")
