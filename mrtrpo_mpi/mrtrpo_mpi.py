@@ -177,7 +177,6 @@ def learn(*,
     
     process_dir = logger.get_dir()
     save_dir = process_dir.split('Data')[-2] + 'log/seed' + process_dir[-1] +'/'
-    print(save_dir)
     os.makedirs(save_dir, exist_ok = True)
     coe_save = []
     impro_save = []
@@ -411,7 +410,7 @@ def learn(*,
             	    # stepdir 是更新方向
                     stepdir = cg(fisher_vector_product, g, cg_iters=cg_iters, verbose=rank==0)
                     shs = .5*stepdir.dot(fisher_vector_product(stepdir))
-                    lm = np.sqrt(shs / adj_max_kl)
+                    lm = np.sqrt(shs / max_kl)
                     # logger.log("lagrange multiplier:", lm, "gnorm:", np.linalg.norm(g))
                     fullstep = stepdir / lm
                     grad_norm[i] = np.linalg.norm(fullstep)
@@ -426,9 +425,10 @@ def learn(*,
         GG = np.dot(G, G.T)
         D = np.sqrt(np.diag(1/np.diag(GG)))
         GG = np.dot(np.dot(D,GG),D)
-        adj = np.sum(GG) / (num_reward) ^ 2
+        adj = np.sum(GG) / (num_reward ** 2)
         adj_max_kl = adj * max_kl
         #################################################################
+        grad_norm = grad_norm * np.sqrt(adj)
         stepdir = np.dot(coe, S)
         g = np.dot(coe, G)
         lossbefore = np.dot(coe,mr_lossbefore)
