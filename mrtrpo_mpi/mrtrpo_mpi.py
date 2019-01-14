@@ -14,6 +14,7 @@ from contextlib import contextmanager
 from baselines.mrtrpo_mpi.optim import get_coefficient
 from pprint import pprint
 import pdb
+import os
 
 try:
     from mpi4py import MPI
@@ -174,8 +175,14 @@ def learn(*,
     # 创建policy
     policy = build_policy(env, network, value_network='copy', num_reward = num_reward, **network_kwargs)
     
-    filename = logger.get_dir()
-    print(filename)
+    process_dir = logger.get_dir()
+    save_dir = process_dir.split('Data')[-2] + 'log/seed' + process_dir[-1] +'/'
+    print(save_dir)
+    os.makedirs(save_dir, exist_ok = True)
+    coe_save = []
+    impro_save = []
+    grad_save = []
+
     np.set_printoptions(precision=3)
     # Setup losses and stuff
     # ----------------------------------------
@@ -375,6 +382,7 @@ def learn(*,
         G = None
         S = None
         mr_lossbefore = np.zeros((num_reward,len(loss_names)))
+        grad_norm = np.zeros((num_reward+1))
         for i in range(num_reward):
             args = seg["ob"], seg["ac"], atarg[:,i]
             # 算是args的一个sample，每隔5个取出一个
@@ -402,16 +410,22 @@ def learn(*,
                 with timed("cg of " + str(i+1) +".th reward"):
             	    # stepdir 是更新方向
                     stepdir = cg(fisher_vector_product, g, cg_iters=cg_iters, verbose=rank==0)
+                    shs = .5*stepdir.dot(fisher_vector_product(stepdir))
+                    lm = np.sqrt(shs / adj_max_kl)
+                    # logger.log("lagrange multiplier:", lm, "gnorm:", np.linalg.norm(g))
+                    fullstep = stepdir / lm
+                    grad_norm[i] = np.linalg.norm(fullstep)
                 assert np.isfinite(stepdir).all()
                 if isinstance(S,np.ndarray):
                     S = np.vstack((S,stepdir))
                 else:
                     S = stepdir
         coe = get_coefficient( G, S)
+        coe_save.append(coe)
         #根据梯度的夹角调整参数
         GG = np.dot(G, G.T)
         D = np.sqrt(np.diag(1/np.diag(GG)))
-        GG = np.dot(np.dot(D,G),D)
+        GG = np.dot(np.dot(D,GG),D)
         adj = np.sum(GG) / (num_reward) ^ 2
         adj_max_kl = adj * max_kl
         #################################################################
@@ -424,6 +438,8 @@ def learn(*,
         lm = np.sqrt(shs / adj_max_kl)
         # logger.log("lagrange multiplier:", lm, "gnorm:", np.linalg.norm(g))
         fullstep = stepdir / lm
+        grad_norm[num_reward] = np.linalg.norm(fullstep)
+        grad_save.append(grad_norm)
         expectedimprove = g.dot(fullstep)
         surrbefore = lossbefore[0]
         stepsize = 1.0
@@ -436,13 +452,15 @@ def learn(*,
                 one_reward_loss = allmean(np.array(compute_losses(*args)))
                 mr_losses[i] = one_reward_loss
             mr_loss = np.dot(coe,mr_losses)
-            return mr_loss
+            return mr_loss,mr_losses
 
         # 做10次搜索
         for _ in range(10):
             thnew = thbefore + fullstep * stepsize
             set_from_flat(thnew)
-            meanlosses = surr, kl, *_ = allmean(np.array(compute_mr_losses()))
+            mr_loss_new,mr_losses_new = compute_mr_losses()
+            mr_impro = mr_losses_new - mr_lossbefore
+            meanlosses = surr, kl, *_ = allmean(np.array(mr_loss_new))
             improve = surr - surrbefore
             logger.log("Expected: %.3f Actual: %.3f"%(expectedimprove, improve))
             if not np.isfinite(meanlosses).all():
@@ -453,6 +471,7 @@ def learn(*,
                 logger.log("surrogate didn't improve. shrinking step.")
             else:
                 logger.log("Stepsize OK!")
+                impro_save.append(np.hstack((mr_impro[:,0],improve)))
                 break
             stepsize *= .5
         else:
@@ -499,6 +518,9 @@ def learn(*,
         if rank==0:
             logger.dump_tabular()
         #pdb.set_trace()
+    np.save(save_dir + 'coe.npy',coe_save)
+    np.save(save_dir + 'grad.npy',grad_save)
+    np.save(save_dir + 'improve.npy',impro_save)
     return pi
 
 def flatten_lists(listoflists):
