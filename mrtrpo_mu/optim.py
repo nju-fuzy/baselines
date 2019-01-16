@@ -70,22 +70,46 @@ def l1_norm_constraint(H,num_reward):
     return x
 
 def max_update(SS,H,num_reward):
-    x = Variable(num_reward)
-    objective = Minimize(quad_form(x,H))
-    constraints = [ x >= 0,
-              x.T * SS * x == 1]
+    try:
+        x = Variable(num_reward)
+        objective = Minimize(quad_form(x,H))
+        constraints = [ x >= 0,
+                  x.T * SS * x == 1]
 
-    prob = Problem(objective, constraints)
-    qcqp = QCQP(prob)
+        prob = Problem(objective, constraints)
+        qcqp = QCQP(prob)
 
-    # SDR SPECTRAL
-    qcqp.suggest(SDR)
-    #print("SDR lower bound: %.3f" % qcqp.sdr_bound)
+        # SDR SPECTRAL
+        qcqp.suggest(SDR)
+        #print("SDR lower bound: %.3f" % qcqp.sdr_bound)
 
-    # Attempt to improve the starting point given by the suggest method
-    f_cd, v_cd = qcqp.improve(COORD_DESCENT)
+        # Attempt to improve the starting point given by the suggest method
+        f_cd, v_cd = qcqp.improve(COORD_DESCENT)
+        return np.maximum(np.array(x.value),0).reshape((num_reward))
 
-    return np.array(x.value).reshape((num_reward))
+    except:
+        try:
+            x = Variable(num_reward)
+            objective = Maximize(quad_form(x,SS))
+            constraints = [ x >= 0,
+                      x.T * H * x == 1]
+
+            prob = Problem(objective, constraints)
+            qcqp = QCQP(prob)
+
+            # SDR SPECTRAL
+            qcqp.suggest(SDR)
+            #print("SDR lower bound: %.3f" % qcqp.sdr_bound)
+
+            # Attempt to improve the starting point given by the suggest method
+            f_cd, v_cd = qcqp.improve(COORD_DESCENT)
+            return np.maximum(np.array(x.value),0).reshape((num_reward))
+        except:
+            nrom_g = np.diag(SS) / np.diag(H)
+            index = np.argmax(nrom_g)
+            res = np.zeros((num_reward))
+            res[index] = 1
+            return res
 
 def test_get_coe():
     n = 3
