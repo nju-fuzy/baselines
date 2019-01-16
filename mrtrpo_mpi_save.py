@@ -47,7 +47,6 @@ def traj_segment_generator(pi, env, horizon, stochastic, num_reward = 1):
     while True:
         prevac = ac
         ac, vpred, _, _ = pi.step(ob, stochastic=stochastic)
-        #print(vpred)
         # Slight weirdness here because we need value function at time T
         # before returning segment [0, T-1] so we get the correct
         # terminal value
@@ -63,15 +62,13 @@ def traj_segment_generator(pi, env, horizon, stochastic, num_reward = 1):
         i = t % horizon
         obs[i] = ob
         vpreds[i] = vpred
-        #print("==========================")
         news[i] = new
         acs[i] = ac
         prevacs[i] = prevac
 
         ob, rew, new, _ = env.step(ac)
         rews[i] = rew
-        #print('rew')
-        #print(rews)
+
         cur_ep_ret += rew
         cur_ep_len += 1
         if new:
@@ -84,10 +81,7 @@ def traj_segment_generator(pi, env, horizon, stochastic, num_reward = 1):
 
 def add_vtarg_and_adv(seg, gamma, lam, num_reward = 1):
     new = np.append(seg["new"], 0) # last element is only used for last vtarg, but we already zeroed it if last new = 1
-    vpred = np.append(seg["vpred"], seg["nextvpred"],axis=0)
-    #print(seg["vpred"])
-    #print(vpred.shape)
-    #pdb.set_trace()
+    vpred = np.append(seg["vpred"], seg["nextvpred"])
     T = len(seg["rew"])
     seg["adv"] = gaelam = np.empty((T,num_reward), 'float32')
     rew = seg["rew"]
@@ -96,7 +90,6 @@ def add_vtarg_and_adv(seg, gamma, lam, num_reward = 1):
         nonterminal = 1-new[t+1]
         delta = rew[t] + gamma * vpred[t+1] * nonterminal - vpred[t]
         gaelam[t] = lastgaelam = delta + gamma * lam * nonterminal * lastgaelam
-    #pdb.set_trace()
     seg["tdlamret"] = seg["adv"] + seg["vpred"]
 
 def learn(*,
@@ -379,12 +372,7 @@ def learn(*,
         vpredbefore = seg["vpred"] # predicted value function before udpate
 
         # 标准化
-        #print("============================== atarg =========================================================")
-        #print(atarg)
         atarg = (atarg - np.mean(atarg,axis = 0)) / np.std(atarg,axis=0) # standardized advantage function estimate
-        #atarg = (atarg) / np.max(np.abs(atarg),axis=0)
-        #print('======================================= standardized atarg ====================================')
-        #print(atarg)
         if hasattr(pi, "ret_rms"): pi.ret_rms.update(tdlamret)
         if hasattr(pi, "ob_rms"): pi.ob_rms.update(ob) # update running mean/std for policy
         
@@ -397,7 +385,6 @@ def learn(*,
         grad_norm = np.zeros((num_reward+1))
         for i in range(num_reward):
             args = seg["ob"], seg["ac"], atarg[:,i]
-            #print(atarg[:,i])
             # 算是args的一个sample，每隔5个取出一个
             fvpargs = [arr[::5] for arr in args]
             
@@ -410,8 +397,6 @@ def learn(*,
             lossbefore = allmean(np.array(lossbefore))
             mr_lossbefore[i] = lossbefore
             g = allmean(g)
-            #print("***************************************************************")
-            #print(g)
             if isinstance(G,np.ndarray):
                 G = np.vstack((G,g))
             else:
@@ -435,21 +420,13 @@ def learn(*,
                     S = np.vstack((S,stepdir))
                 else:
                     S = stepdir
-        #print('======================================= G ====================================')
-        #print(G)
-        #print('======================================= S ====================================')
-        #print(S)
         coe = get_coefficient( G, S)
         coe_save.append(coe)
         #根据梯度的夹角调整参数
-        GG = np.dot(S, S.T)
+        GG = np.dot(G, G.T)
         D = np.sqrt(np.diag(1/np.diag(GG)))
         GG = np.dot(np.dot(D,GG),D)
-        #print('======================================= inner product ====================================')
-        #print(GG)
         adj = np.sum(GG) / (num_reward ** 2)
-        #print('======================================= adj ====================================')
-        #print(adj)
         adj_save.append(adj)
         adj_max_kl = adj * max_kl
         #################################################################
@@ -510,20 +487,15 @@ def learn(*,
             logger.record_tabular(lossname, lossval)
 
         with timed("vf"):
-            #print('======================================= tdlamret ====================================')
-            #print(seg["tdlamret"])
+
             for _ in range(vf_iters):
                 for (mbob, mbret) in dataset.iterbatches((seg["ob"], seg["tdlamret"]),
                 include_final_partial_batch=False, batch_size=64):
                     #with tf.Session() as sess:
                     #    sess.run(tf.global_variables_initializer())
-                    #    aaa = sess.run(pi.vf,feed_dict={ob:mbob,ret:mbret})
-                    #    print("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
-                    #    print(aaa.shape)
-                    #    print(mbret.shape)
+                    #    print(sess.run(vferr,feed_dict={ob:mbob,ret:mbret}))
                     g = allmean(compute_vflossandgrad(mbob, mbret))
                     vfadam.update(g, vf_stepsize)
-            #print(mbob,mbret)
         logger.record_tabular("ev_tdlam_before", explained_variance(vpredbefore, tdlamret))
 
         lrlocal = (seg["ep_lens"], seg["ep_rets"]) # local values
