@@ -189,7 +189,8 @@ def learn(*,
     impro_save = []
     grad_save = []
     adj_save = []
-
+    coe = np.ones((num_reward))/num_reward
+    
     np.set_printoptions(precision=3)
     # Setup losses and stuff
     # ----------------------------------------
