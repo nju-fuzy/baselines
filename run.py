@@ -60,6 +60,7 @@ _game_envs['retro'] = {
     'SpaceInvaders-Snes',
 }
 
+mr_algs = ['mrtrpo_l1','mrtrpo_l2','mrtrpo_mu','trpo_lin','ensemble_lin','ensemble_maj','ensemble_rank']
 
 def train(args, extra_args):
     env_type, env_id = get_env_type(args.env)
@@ -97,7 +98,7 @@ def train(args, extra_args):
     'ent_coef': 0.01, 'lr': <function atari.<locals>.<lambda> at 0x7f7f32867730>, 
     'cliprange': <function atari.<locals>.<lambda> at 0x7f7f2bb908c8>, 'network': 'cnn'}
     '''
-    if args.alg in ["mrtrpo_mpi",'ensemble_rl']:
+    if args.alg in mr_algs:
         model = learn(
             env=env,
             seed=seed,
@@ -132,7 +133,7 @@ def build_env(args):
         if alg == 'deepq':
             env = make_env(env_id, env_type, seed=seed, wrapper_kwargs={'frame_stack': True}, num_reward = args.num_reward, reward_type = args.reward_type)
             print("env with frame_stack")
-        elif alg in ['trpo_mpi','mrtrpo_mpi','ensemble_rl']:
+        elif alg in ['trpo_mpi'] + mr_algs:
             env = make_env(env_id, env_type, seed=seed, num_reward = args.num_reward, reward_type = args.reward_type)
             print("normal env")
         else:
@@ -140,7 +141,7 @@ def build_env(args):
             env = make_vec_env(env_id, env_type, nenv, seed, gamestate=args.gamestate, reward_scale=args.reward_scale, num_reward = args.num_reward, reward_type = args.reward_type)
             env = VecFrameStack(env, frame_stack_size)
             print("VecFrameStack env")
-    elif alg in ['mrtrpo_mpi', 'ensemble_rl']:
+    elif alg in mr_algs:
         env = make_env(env_id, env_type, seed=seed, num_reward = args.num_reward, reward_type = args.reward_type)
         print("normal env")
     else:
