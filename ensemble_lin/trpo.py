@@ -10,7 +10,6 @@ from baselines.common.mpi_adam import MpiAdam
 from baselines.common.cg import cg
 from baselines.common.input import observation_placeholder
 from contextlib import contextmanager
-from baselines.mrtrpo_mpi.optim import get_coefficient
 from pprint import pprint
 import pdb
 

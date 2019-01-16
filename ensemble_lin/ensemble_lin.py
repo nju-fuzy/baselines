@@ -11,7 +11,7 @@ from baselines.common.cg import cg
 from baselines.common.input import observation_placeholder
 from baselines.common.policies import build_policy
 from contextlib import contextmanager
-from baselines.ensemble_rl.trpo import trpo
+from baselines.ensemble_lin.trpo import trpo
 from pprint import pprint
 import pdb
 
