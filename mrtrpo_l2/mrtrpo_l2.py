@@ -183,7 +183,7 @@ def learn(*,
     policy = build_policy(env, network, value_network='copy', num_reward = num_reward, **network_kwargs)
     
     process_dir = logger.get_dir()
-    save_dir = process_dir.split('Data')[-2] + 'log/seed' + process_dir[-1] +'/'
+    save_dir = process_dir.split('Data')[-2] + 'log/l2/seed' + process_dir[-1] +'/'
     os.makedirs(save_dir, exist_ok = True)
     coe_save = []
     impro_save = []
@@ -441,8 +441,8 @@ def learn(*,
         #print('======================================= S ====================================')
         #print(S)
         new_coe = get_coefficient( G, S)
-        coe = 0.99 * coe + 0.01 * new_coe
-        #coe = new_coe
+        #coe = 0.99 * coe + 0.01 * new_coe
+        coe = new_coe
         coe_save.append(coe)
         #根据梯度的夹角调整参数
         GG = np.dot(S, S.T)
