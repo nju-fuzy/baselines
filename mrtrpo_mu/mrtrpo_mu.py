@@ -441,8 +441,8 @@ def learn(*,
         #print('======================================= S ====================================')
         #print(S)
         new_coe = get_coefficient( G, S)
-        #coe = 0.99 * coe + 0.01 * new_coe
-        coe = new_coe
+        coe = 0.99 * coe + 0.01 * new_coe
+        #coe = new_coe
         coe_save.append(coe)
         #根据梯度的夹角调整参数
         GG = np.dot(S, S.T)

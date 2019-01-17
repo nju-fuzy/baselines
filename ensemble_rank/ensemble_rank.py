@@ -91,6 +91,8 @@ def ensemble_step(ob,models, ac_space, num_reward, stochastic=True):
             mr_pi = pi
         vpred[i] = v
     mr_pi = mr_pi.T
+    mr_pi = np.maximum(mr_pi,-10)
+    mr_pi = np.minimum(mr_pi,10)
     exp_mr_pi = np.exp(mr_pi)
     mr_pi = exp_mr_pi / np.sum(exp_mr_pi,axis = 0)
     mr_pi = mr_pi.T
@@ -122,7 +124,7 @@ def morl_ensemble(policy_actions, ensemble_type = 3, weights = None):
     n_policies, n_actions = policy_actions.shape
 
     for i in range(n_policies):
-        assert abs(np.sum(policy_actions[i]) - 1.0) < 1e-6, "The {}-th policy_actions is not a distribution, row_sum must be 1.0".format(i)
+        assert abs(np.sum(policy_actions[i]) - 1.0) < 1e-2, "The {}-th policy_actions is not a distribution, row_sum must be 1.0".format(i)
 
     if not isinstance(weights, np.ndarray):
         weights = np.ones(n_policies) / n_policies
@@ -150,7 +152,7 @@ def morl_ensemble(policy_actions, ensemble_type = 3, weights = None):
 
 def add_vtarg_and_adv(seg, gamma, lam, num_reward = 1):
     new = np.append(seg["new"], 0) # last element is only used for last vtarg, but we already zeroed it if last new = 1
-    vpred = np.append(seg["vpred"], seg["nextvpred"],axis=0)
+    vpred = np.append(seg["vpred"], seg["nextvpred"].reshape(1,-1),axis=0)
     T = len(seg["rew"])
     seg["adv"] = gaelam = np.empty((T,num_reward), 'float32')
     rew = seg["rew"]
@@ -251,7 +253,7 @@ def learn(*,
     
     set_global_seeds(seed)
     # 创建policy
-    policy = build_policy(env, network, value_network='copy', num_reward = num_reward, **network_kwargs)
+    policy = build_policy(env, network, value_network='copy', **network_kwargs)
     
 
     np.set_printoptions(precision=3)
