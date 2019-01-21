@@ -5,10 +5,15 @@ from cvxpy import *
 from qcqp import *
 import pdb
 def get_coefficient(G,S,method = 1):
-    num_reward = G.shape[0]
-    coe = np.ones((num_reward))
-    H = np.dot(S, G.T)
-    SS = np.dot(S, S.T)
+    try:
+        num_reward = G.shape[0]
+        coe = np.ones((num_reward))
+        H = np.dot(S, G.T)
+        SS = np.dot(S, S.T)
+    except:
+        num_reward = G.shape[0]
+        coe = np.ones((num_reward))
+        return coe/num_reward
     if method == 1:
         return l1_norm_constraint(H,num_reward)
     elif method == 2:

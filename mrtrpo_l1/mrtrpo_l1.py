@@ -104,12 +104,12 @@ def learn(*,
         env,
         total_timesteps,
         timesteps_per_batch=1024, # what to train on
-        max_kl=0.001,
+        max_kl=0.002,
         cg_iters=10,
         gamma=0.99,
         lam=1.0, # advantage estimation
         seed=None,
-        ent_coef=0.0,
+        ent_coef=0.00,
         cg_damping=1e-2,
         vf_stepsize=3e-4,
         vf_iters =3,
@@ -413,6 +413,8 @@ def learn(*,
             g = allmean(g)
             #print("***************************************************************")
             #print(g)
+            #print('==================='+str(i+1)+"=====================",np.linalg.norm(g))
+            #print(atarg[:,i])
             if isinstance(G,np.ndarray):
                 G = np.vstack((G,g))
             else:
@@ -430,6 +432,7 @@ def learn(*,
                     lm = np.sqrt(shs / max_kl)
                     # logger.log("lagrange multiplier:", lm, "gnorm:", np.linalg.norm(g))
                     fullstep = stepdir / lm
+                    #print(np.linalg.norm(fullstep))
                     grad_norm[i] = np.linalg.norm(fullstep)
                 assert np.isfinite(stepdir).all()
                 if isinstance(S,np.ndarray):
@@ -445,12 +448,15 @@ def learn(*,
         coe = new_coe
         coe_save.append(coe)
         #根据梯度的夹角调整参数
-        GG = np.dot(S, S.T)
-        D = np.sqrt(np.diag(1/np.diag(GG)))
-        GG = np.dot(np.dot(D,GG),D)
-        #print('======================================= inner product ====================================')
-        #print(GG)
-        adj = np.sum(GG) / (num_reward ** 2)
+        try:
+            GG = np.dot(S, S.T)
+            D = np.sqrt(np.diag(1/np.diag(GG)))
+            GG = np.dot(np.dot(D,GG),D)
+            #print('======================================= inner product ====================================')
+            #print(GG)
+            adj = np.sum(GG) / (num_reward ** 2)
+        except:
+            adj = 1
         #print('======================================= adj ====================================')
         #print(adj)
         adj_save.append(adj)
