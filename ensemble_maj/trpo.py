@@ -199,52 +199,55 @@ class trpo(object):
             
         # g是目标函数的梯度
         # 利用共轭梯度获得更新方向
-        if np.allclose(g, 0):
-            logger.log("Got zero gradient. not updating")
-        else:
-            with self.timed("cg of " + str(self.index+1) +".th reward"):
-        	    # stepdir 是更新方向
-                stepdir = cg(fisher_vector_product, g, cg_iters=self.cg_iters, verbose=self.rank==0)
-            assert np.isfinite(stepdir).all()
-        
-            shs = .5*stepdir.dot(fisher_vector_product(stepdir))
-            lm = np.sqrt(shs / self.max_kl)
-            # logger.log("lagrange multiplier:", lm, "gnorm:", np.linalg.norm(g))
-            fullstep = stepdir / lm
-            expectedimprove = g.dot(fullstep)
-            surrbefore = lossbefore[0]
-            stepsize = 1.0
-            thbefore = self.get_flat()
-
-            # 做10次搜索
-            for _ in range(10):
-                thnew = thbefore + fullstep * stepsize
-                self.set_from_flat(thnew)
-                meanlosses = surr, kl, *_ = allmean(np.array(self.compute_losses(*args)))
-                improve = surr - surrbefore
-                logger.log("Expected: %.3f Actual: %.3f"%(expectedimprove, improve))
-                if not np.isfinite(meanlosses).all():
-                    logger.log("Got non-finite value of losses -- bad!")
-                elif kl > self.max_kl * 1.5:
-                    logger.log("violated KL constraint. shrinking step.")
-                elif improve < 0:
-                    logger.log("surrogate didn't improve. shrinking step.")
-                else:
-                    logger.log("Stepsize OK!")
-                    break
-                stepsize *= .5
+        try:
+            if np.allclose(g, 0):
+                logger.log("Got zero gradient. not updating")
             else:
-                logger.log("couldn't compute a good step")
-                self.set_from_flat(thbefore)
-        with self.timed("vf"):
-            for _ in range(self.vf_iters):
-                for (mbob, mbret) in dataset.iterbatches((ob , tdlamret),
-                include_final_partial_batch=False, batch_size=64):
-                    #with tf.Session() as sess:
-                    #    sess.run(tf.global_variables_initializer())
-                    #    print(sess.run(vferr,feed_dict={ob:mbob,ret:mbret}))
-                    g = allmean(self.compute_vflossandgrad(mbob, mbret))
-                    self.vfadam.update(g, self.vf_stepsize)
+                with self.timed("cg of " + str(self.index+1) +".th reward"):
+            	    # stepdir 是更新方向
+                    stepdir = cg(fisher_vector_product, g, cg_iters=self.cg_iters, verbose=self.rank==0)
+                assert np.isfinite(stepdir).all()
+            
+                shs = .5*stepdir.dot(fisher_vector_product(stepdir))
+                lm = np.sqrt(shs / self.max_kl)
+                # logger.log("lagrange multiplier:", lm, "gnorm:", np.linalg.norm(g))
+                fullstep = stepdir / lm
+                expectedimprove = g.dot(fullstep)
+                surrbefore = lossbefore[0]
+                stepsize = 1.0
+                thbefore = self.get_flat()
+
+                # 做10次搜索
+                for _ in range(10):
+                    thnew = thbefore + fullstep * stepsize
+                    self.set_from_flat(thnew)
+                    meanlosses = surr, kl, *_ = allmean(np.array(self.compute_losses(*args)))
+                    improve = surr - surrbefore
+                    logger.log("Expected: %.3f Actual: %.3f"%(expectedimprove, improve))
+                    if not np.isfinite(meanlosses).all():
+                        logger.log("Got non-finite value of losses -- bad!")
+                    elif kl > self.max_kl * 1.5:
+                        logger.log("violated KL constraint. shrinking step.")
+                    elif improve < 0:
+                        logger.log("surrogate didn't improve. shrinking step.")
+                    else:
+                        logger.log("Stepsize OK!")
+                        break
+                    stepsize *= .5
+                else:
+                    logger.log("couldn't compute a good step")
+                    self.set_from_flat(thbefore)
+            with self.timed("vf"):
+                for _ in range(self.vf_iters):
+                    for (mbob, mbret) in dataset.iterbatches((ob , tdlamret),
+                    include_final_partial_batch=False, batch_size=64):
+                        #with tf.Session() as sess:
+                        #    sess.run(tf.global_variables_initializer())
+                        #    print(sess.run(vferr,feed_dict={ob:mbob,ret:mbret}))
+                        g = allmean(self.compute_vflossandgrad(mbob, mbret))
+                        self.vfadam.update(g, self.vf_stepsize)
+        except:
+            print("can't learn")
 
 
 

@@ -22,7 +22,8 @@ import os
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
 # add for tensorflow
-gpu_options = tf.GPUOptions(allow_growth=True)
+#gpu_options = tf.GPUOptions(allow_growth=True)
+gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction = 0.12)
 sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
 
 try:
