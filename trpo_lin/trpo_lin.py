@@ -390,141 +390,143 @@ def learn(*,
         
         ## set old parameter values to new parameter values
         assign_old_eq_new()
-
-        G = None
-        S = None
-        mr_lossbefore = np.zeros((num_reward,len(loss_names)))
-        grad_norm = np.zeros((num_reward+1))
-        for i in range(num_reward):
-            args = seg["ob"], seg["ac"], atarg[:,i]
-            #print(atarg[:,i])
-            # 算是args的一个sample，每隔5个取出一个
-            fvpargs = [arr[::5] for arr in args]
-            
-            # 这个函数计算fisher matrix 与向量 p 的 乘积
-            def fisher_vector_product(p):
-                return allmean(compute_fvp(p, *fvpargs)) + cg_damping * p
-
-            with timed("computegrad of " + str(i+1) +".th reward"):
-                *lossbefore, g = compute_lossandgrad(*args)
-            lossbefore = allmean(np.array(lossbefore))
-            mr_lossbefore[i] = lossbefore
-            g = allmean(g)
-            #print("***************************************************************")
-            #print(g)
-            if isinstance(G,np.ndarray):
-                G = np.vstack((G,g))
-            else:
-                G = g
-            
-            # g是目标函数的梯度
-            # 利用共轭梯度获得更新方向
-            if np.allclose(g, 0):
-                logger.log("Got zero gradient. not updating")
-            else:
-                with timed("cg of " + str(i+1) +".th reward"):
-            	    # stepdir 是更新方向
-                    stepdir = cg(fisher_vector_product, g, cg_iters=cg_iters, verbose=rank==0)
-                    shs = .5*stepdir.dot(fisher_vector_product(stepdir))
-                    lm = np.sqrt(shs / max_kl)
-                    # logger.log("lagrange multiplier:", lm, "gnorm:", np.linalg.norm(g))
-                    fullstep = stepdir / lm
-                    grad_norm[i] = np.linalg.norm(fullstep)
-                assert np.isfinite(stepdir).all()
-                if isinstance(S,np.ndarray):
-                    S = np.vstack((S,stepdir))
-                else:
-                    S = stepdir
-        #print('======================================= G ====================================')
-        #print(G)
-        #print('======================================= S ====================================')
-        #print(S)
-        coe = get_coefficient( G, S)
-        coe_save.append(coe)
-        #根据梯度的夹角调整参数
-        GG = np.dot(S, S.T)
-        D = np.sqrt(np.diag(1/np.diag(GG)))
-        GG = np.dot(np.dot(D,GG),D)
-        #print('======================================= inner product ====================================')
-        #print(GG)
-        adj = np.sum(GG) / (num_reward ** 2)
-        #print('======================================= adj ====================================')
-        #print(adj)
-        adj_save.append(adj)
-        adj_max_kl = adj * max_kl
-        #################################################################
-        grad_norm = grad_norm * np.sqrt(adj)
-        stepdir = np.dot(coe, S)
-        g = np.dot(coe, G)
-        lossbefore = np.dot(coe,mr_lossbefore)
-        #################################################################
-        
-        shs = .5*stepdir.dot(fisher_vector_product(stepdir))
-        lm = np.sqrt(shs / adj_max_kl)
-        # logger.log("lagrange multiplier:", lm, "gnorm:", np.linalg.norm(g))
-        fullstep = stepdir / lm
-        grad_norm[num_reward] = np.linalg.norm(fullstep)
-        grad_save.append(grad_norm)
-        expectedimprove = g.dot(fullstep)
-        surrbefore = lossbefore[0]
-        stepsize = 1.0
-        thbefore = get_flat()
-
-        def compute_mr_losses():
-            mr_losses = np.zeros((num_reward,len(loss_names)))
+        try:
+            G = None
+            S = None
+            mr_lossbefore = np.zeros((num_reward,len(loss_names)))
+            grad_norm = np.zeros((num_reward+1))
             for i in range(num_reward):
                 args = seg["ob"], seg["ac"], atarg[:,i]
-                one_reward_loss = allmean(np.array(compute_losses(*args)))
-                mr_losses[i] = one_reward_loss
-            mr_loss = np.dot(coe,mr_losses)
-            return mr_loss,mr_losses
+                #print(atarg[:,i])
+                # 算是args的一个sample，每隔5个取出一个
+                fvpargs = [arr[::5] for arr in args]
+                
+                # 这个函数计算fisher matrix 与向量 p 的 乘积
+                def fisher_vector_product(p):
+                    return allmean(compute_fvp(p, *fvpargs)) + cg_damping * p
 
-        # 做10次搜索
-        for _ in range(10):
-            thnew = thbefore + fullstep * stepsize
-            set_from_flat(thnew)
-            mr_loss_new,mr_losses_new = compute_mr_losses()
-            mr_impro = mr_losses_new - mr_lossbefore
-            meanlosses = surr, kl, *_ = allmean(np.array(mr_loss_new))
-            improve = surr - surrbefore
-            logger.log("Expected: %.3f Actual: %.3f"%(expectedimprove, improve))
-            if not np.isfinite(meanlosses).all():
-                logger.log("Got non-finite value of losses -- bad!")
-            elif kl > adj_max_kl * 1.5:
-                logger.log("violated KL constraint. shrinking step.")
-            elif improve < 0:
-                logger.log("surrogate didn't improve. shrinking step.")
+                with timed("computegrad of " + str(i+1) +".th reward"):
+                    *lossbefore, g = compute_lossandgrad(*args)
+                lossbefore = allmean(np.array(lossbefore))
+                mr_lossbefore[i] = lossbefore
+                g = allmean(g)
+                #print("***************************************************************")
+                #print(g)
+                if isinstance(G,np.ndarray):
+                    G = np.vstack((G,g))
+                else:
+                    G = g
+                
+                # g是目标函数的梯度
+                # 利用共轭梯度获得更新方向
+                if np.allclose(g, 0):
+                    logger.log("Got zero gradient. not updating")
+                else:
+                    with timed("cg of " + str(i+1) +".th reward"):
+                	    # stepdir 是更新方向
+                        stepdir = cg(fisher_vector_product, g, cg_iters=cg_iters, verbose=rank==0)
+                        shs = .5*stepdir.dot(fisher_vector_product(stepdir))
+                        lm = np.sqrt(shs / max_kl)
+                        # logger.log("lagrange multiplier:", lm, "gnorm:", np.linalg.norm(g))
+                        fullstep = stepdir / lm
+                        grad_norm[i] = np.linalg.norm(fullstep)
+                    assert np.isfinite(stepdir).all()
+                    if isinstance(S,np.ndarray):
+                        S = np.vstack((S,stepdir))
+                    else:
+                        S = stepdir
+            #print('======================================= G ====================================')
+            #print(G)
+            #print('======================================= S ====================================')
+            #print(S)
+            coe = get_coefficient( G, S)
+            coe_save.append(coe)
+            #根据梯度的夹角调整参数
+            GG = np.dot(S, S.T)
+            D = np.sqrt(np.diag(1/np.diag(GG)))
+            GG = np.dot(np.dot(D,GG),D)
+            #print('======================================= inner product ====================================')
+            #print(GG)
+            adj = np.sum(GG) / (num_reward ** 2)
+            #print('======================================= adj ====================================')
+            #print(adj)
+            adj_save.append(adj)
+            adj_max_kl = adj * max_kl
+            #################################################################
+            grad_norm = grad_norm * np.sqrt(adj)
+            stepdir = np.dot(coe, S)
+            g = np.dot(coe, G)
+            lossbefore = np.dot(coe,mr_lossbefore)
+            #################################################################
+            
+            shs = .5*stepdir.dot(fisher_vector_product(stepdir))
+            lm = np.sqrt(shs / adj_max_kl)
+            # logger.log("lagrange multiplier:", lm, "gnorm:", np.linalg.norm(g))
+            fullstep = stepdir / lm
+            grad_norm[num_reward] = np.linalg.norm(fullstep)
+            grad_save.append(grad_norm)
+            expectedimprove = g.dot(fullstep)
+            surrbefore = lossbefore[0]
+            stepsize = 1.0
+            thbefore = get_flat()
+
+            def compute_mr_losses():
+                mr_losses = np.zeros((num_reward,len(loss_names)))
+                for i in range(num_reward):
+                    args = seg["ob"], seg["ac"], atarg[:,i]
+                    one_reward_loss = allmean(np.array(compute_losses(*args)))
+                    mr_losses[i] = one_reward_loss
+                mr_loss = np.dot(coe,mr_losses)
+                return mr_loss,mr_losses
+
+            # 做10次搜索
+            for _ in range(10):
+                thnew = thbefore + fullstep * stepsize
+                set_from_flat(thnew)
+                mr_loss_new,mr_losses_new = compute_mr_losses()
+                mr_impro = mr_losses_new - mr_lossbefore
+                meanlosses = surr, kl, *_ = allmean(np.array(mr_loss_new))
+                improve = surr - surrbefore
+                logger.log("Expected: %.3f Actual: %.3f"%(expectedimprove, improve))
+                if not np.isfinite(meanlosses).all():
+                    logger.log("Got non-finite value of losses -- bad!")
+                elif kl > adj_max_kl * 1.5:
+                    logger.log("violated KL constraint. shrinking step.")
+                elif improve < 0:
+                    logger.log("surrogate didn't improve. shrinking step.")
+                else:
+                    logger.log("Stepsize OK!")
+                    impro_save.append(np.hstack((mr_impro[:,0],improve)))
+                    break
+                stepsize *= .5
             else:
-                logger.log("Stepsize OK!")
-                impro_save.append(np.hstack((mr_impro[:,0],improve)))
-                break
-            stepsize *= .5
-        else:
-            logger.log("couldn't compute a good step")
-            set_from_flat(thbefore)
-        if nworkers > 1 and iters_so_far % 20 == 0:
-            paramsums = MPI.COMM_WORLD.allgather((thnew.sum(), vfadam.getflat().sum())) # list of tuples
-            assert all(np.allclose(ps, paramsums[0]) for ps in paramsums[1:])
+                logger.log("couldn't compute a good step")
+                set_from_flat(thbefore)
+            if nworkers > 1 and iters_so_far % 20 == 0:
+                paramsums = MPI.COMM_WORLD.allgather((thnew.sum(), vfadam.getflat().sum())) # list of tuples
+                assert all(np.allclose(ps, paramsums[0]) for ps in paramsums[1:])
 
-        for (lossname, lossval) in zip(loss_names, meanlosses):
-            logger.record_tabular(lossname, lossval)
+            for (lossname, lossval) in zip(loss_names, meanlosses):
+                logger.record_tabular(lossname, lossval)
 
-        with timed("vf"):
-            #print('======================================= tdlamret ====================================')
-            #print(seg["tdlamret"])
-            for _ in range(vf_iters):
-                for (mbob, mbret) in dataset.iterbatches((seg["ob"], seg["tdlamret"]),
-                include_final_partial_batch=False, batch_size=64):
-                    #with tf.Session() as sess:
-                    #    sess.run(tf.global_variables_initializer())
-                    #    aaa = sess.run(pi.vf,feed_dict={ob:mbob,ret:mbret})
-                    #    print("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
-                    #    print(aaa.shape)
-                    #    print(mbret.shape)
-                    g = allmean(compute_vflossandgrad(mbob, mbret))
-                    vfadam.update(g, vf_stepsize)
-            #print(mbob,mbret)
-        logger.record_tabular("ev_tdlam_before", explained_variance(vpredbefore, tdlamret))
+            with timed("vf"):
+                #print('======================================= tdlamret ====================================')
+                #print(seg["tdlamret"])
+                for _ in range(vf_iters):
+                    for (mbob, mbret) in dataset.iterbatches((seg["ob"], seg["tdlamret"]),
+                    include_final_partial_batch=False, batch_size=64):
+                        #with tf.Session() as sess:
+                        #    sess.run(tf.global_variables_initializer())
+                        #    aaa = sess.run(pi.vf,feed_dict={ob:mbob,ret:mbret})
+                        #    print("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+                        #    print(aaa.shape)
+                        #    print(mbret.shape)
+                        g = allmean(compute_vflossandgrad(mbob, mbret))
+                        vfadam.update(g, vf_stepsize)
+                #print(mbob,mbret)
+            logger.record_tabular("ev_tdlam_before", explained_variance(vpredbefore, tdlamret))
+        except:
+            print('cant update')
 
         lrlocal = (seg["ep_lens"], seg["ep_rets"]) # local values
         if MPI is not None:
