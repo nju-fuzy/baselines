@@ -72,7 +72,7 @@ def l1_norm_constraint(H,num_reward):
 def max_update(SS,H,num_reward):
     try:
         x = Variable(num_reward)
-        objective = Minimize(quad_form(x,H))
+        objective = Maximize(quad_form(x,H))
         constraints = [ x >= 0,
                   x.T * SS * x == 1]
 
@@ -90,7 +90,7 @@ def max_update(SS,H,num_reward):
     except:
         try:
             x = Variable(num_reward)
-            objective = Maximize(quad_form(x,SS))
+            objective = Minimize(quad_form(x,SS))
             constraints = [ x >= 0,
                       x.T * H * x == 1]
 
