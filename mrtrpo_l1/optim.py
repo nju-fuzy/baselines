@@ -10,17 +10,13 @@ def get_coefficient(G,S,method = 1):
         coe = np.ones((num_reward))
         H = np.dot(S, G.T)
         SS = np.dot(S, S.T)
+        if method == 1:
+            return l1_norm_constraint(H,num_reward)
+        else:
+            return coe/num_reward
     except:
         num_reward = G.shape[0]
         coe = np.ones((num_reward))
-        return coe/num_reward
-    if method == 1:
-        return l1_norm_constraint(H,num_reward)
-    elif method == 2:
-        return l2_norm_constraint(H,num_reward)
-    elif method == 3:
-        return max_update(SS,H,num_reward)
-    else:
         return coe/num_reward
 
 def l2_norm_constraint(H,num_reward):
