@@ -12,9 +12,9 @@ def get_coefficient(G,S,method = 2):
         H = np.dot(S, G.T)
         SS = np.dot(S, S.T)
         if method == 1:
-            return max_update_project(SS,H,num_reward)
+            return max_update_project(H,SS,num_reward)
         elif method == 2:
-            return max_update_corrd(SS,H,num_reward)
+            return max_update_corrd(H,SS,num_reward)
         else:
             return coe/num_reward
     except:
