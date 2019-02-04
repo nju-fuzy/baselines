@@ -445,12 +445,12 @@ def learn(*,
         coe = new_coe
         coe_save.append(coe)
         #根据梯度的夹角调整参数
-        GG = np.dot(S, S.T)
-        D = np.sqrt(np.diag(1/np.diag(GG)))
-        GG = np.dot(np.dot(D,GG),D)
-        #print('======================================= inner product ====================================')
-        #print(GG)
-        adj = np.sum(GG) / (num_reward ** 2)
+        # GG = np.dot(S, S.T)
+        # D = np.sqrt(np.diag(1/np.diag(GG)))
+        # GG = np.dot(np.dot(D,GG),D)
+        # #print('======================================= inner product ====================================')
+        # #print(GG)
+        # adj = np.sum(GG) / (num_reward ** 2)
         adj = 1
         #print('======================================= adj ====================================')
         #print(adj)
