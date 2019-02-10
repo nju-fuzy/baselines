@@ -77,9 +77,9 @@ def train(args, extra_args):
     learn = get_learn_function(args.alg)
     alg_kwargs = get_learn_function_defaults(args.alg, env_type)
     #print("=========================================================")
-    #print(alg_kwargs)
+    print(alg_kwargs)
     alg_kwargs.update(extra_args)
-    #print(alg_kwargs)
+    print(alg_kwargs)
 
     
     if args.save_video_interval != 0:

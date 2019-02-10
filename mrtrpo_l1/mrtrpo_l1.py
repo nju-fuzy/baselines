@@ -459,81 +459,84 @@ def learn(*,
             adj = 1
         #print('======================================= adj ====================================')
         #print(adj)
-        adj = 1
-        adj_save.append(adj)
-        adj_max_kl = adj * max_kl
-        #################################################################
-        grad_norm = grad_norm * np.sqrt(adj)
-        stepdir = np.dot(coe, S)
-        g = np.dot(coe, G)
-        lossbefore = np.dot(coe,mr_lossbefore)
-        #################################################################
-        
-        shs = .5*stepdir.dot(fisher_vector_product(stepdir))
-        lm = np.sqrt(shs / adj_max_kl)
-        # logger.log("lagrange multiplier:", lm, "gnorm:", np.linalg.norm(g))
-        fullstep = stepdir / lm
-        grad_norm[num_reward] = np.linalg.norm(fullstep)
-        grad_save.append(grad_norm)
-        expectedimprove = g.dot(fullstep)
-        surrbefore = lossbefore[0]
-        stepsize = 1.0
-        thbefore = get_flat()
+        try:
+            adj = 1
+            adj_save.append(adj)
+            adj_max_kl = adj * max_kl
+            #################################################################
+            grad_norm = grad_norm * np.sqrt(adj)
+            stepdir = np.dot(coe, S)
+            g = np.dot(coe, G)
+            lossbefore = np.dot(coe,mr_lossbefore)
+            #################################################################
+            
+            shs = .5*stepdir.dot(fisher_vector_product(stepdir))
+            lm = np.sqrt(shs / adj_max_kl)
+            # logger.log("lagrange multiplier:", lm, "gnorm:", np.linalg.norm(g))
+            fullstep = stepdir / lm
+            grad_norm[num_reward] = np.linalg.norm(fullstep)
+            grad_save.append(grad_norm)
+            expectedimprove = g.dot(fullstep)
+            surrbefore = lossbefore[0]
+            stepsize = 1.0
+            thbefore = get_flat()
 
-        def compute_mr_losses():
-            mr_losses = np.zeros((num_reward,len(loss_names)))
-            for i in range(num_reward):
-                args = seg["ob"], seg["ac"], atarg[:,i]
-                one_reward_loss = allmean(np.array(compute_losses(*args)))
-                mr_losses[i] = one_reward_loss
-            mr_loss = np.dot(coe,mr_losses)
-            return mr_loss,mr_losses
+            def compute_mr_losses():
+                mr_losses = np.zeros((num_reward,len(loss_names)))
+                for i in range(num_reward):
+                    args = seg["ob"], seg["ac"], atarg[:,i]
+                    one_reward_loss = allmean(np.array(compute_losses(*args)))
+                    mr_losses[i] = one_reward_loss
+                mr_loss = np.dot(coe,mr_losses)
+                return mr_loss,mr_losses
 
-        # 做10次搜索
-        for _ in range(10):
-            thnew = thbefore + fullstep * stepsize
-            set_from_flat(thnew)
-            mr_loss_new,mr_losses_new = compute_mr_losses()
-            mr_impro = mr_losses_new - mr_lossbefore
-            meanlosses = surr, kl, *_ = allmean(np.array(mr_loss_new))
-            improve = surr - surrbefore
-            logger.log("Expected: %.3f Actual: %.3f"%(expectedimprove, improve))
-            if not np.isfinite(meanlosses).all():
-                logger.log("Got non-finite value of losses -- bad!")
-            elif kl > adj_max_kl * 1.5:
-                logger.log("violated KL constraint. shrinking step.")
-            elif improve < 0:
-                logger.log("surrogate didn't improve. shrinking step.")
+            # 做10次搜索
+            for _ in range(10):
+                thnew = thbefore + fullstep * stepsize
+                set_from_flat(thnew)
+                mr_loss_new,mr_losses_new = compute_mr_losses()
+                mr_impro = mr_losses_new - mr_lossbefore
+                meanlosses = surr, kl, *_ = allmean(np.array(mr_loss_new))
+                improve = surr - surrbefore
+                logger.log("Expected: %.3f Actual: %.3f"%(expectedimprove, improve))
+                if not np.isfinite(meanlosses).all():
+                    logger.log("Got non-finite value of losses -- bad!")
+                elif kl > adj_max_kl * 1.5:
+                    logger.log("violated KL constraint. shrinking step.")
+                elif improve < 0:
+                    logger.log("surrogate didn't improve. shrinking step.")
+                else:
+                    logger.log("Stepsize OK!")
+                    impro_save.append(np.hstack((mr_impro[:,0],improve)))
+                    break
+                stepsize *= .5
             else:
-                logger.log("Stepsize OK!")
-                impro_save.append(np.hstack((mr_impro[:,0],improve)))
-                break
-            stepsize *= .5
-        else:
-            logger.log("couldn't compute a good step")
-            set_from_flat(thbefore)
-        if nworkers > 1 and iters_so_far % 20 == 0:
-            paramsums = MPI.COMM_WORLD.allgather((thnew.sum(), vfadam.getflat().sum())) # list of tuples
-            assert all(np.allclose(ps, paramsums[0]) for ps in paramsums[1:])
+                logger.log("couldn't compute a good step")
+                set_from_flat(thbefore)
+            if nworkers > 1 and iters_so_far % 20 == 0:
+                paramsums = MPI.COMM_WORLD.allgather((thnew.sum(), vfadam.getflat().sum())) # list of tuples
+                assert all(np.allclose(ps, paramsums[0]) for ps in paramsums[1:])
 
-        for (lossname, lossval) in zip(loss_names, meanlosses):
-            logger.record_tabular(lossname, lossval)
+            for (lossname, lossval) in zip(loss_names, meanlosses):
+                logger.record_tabular(lossname, lossval)
 
-        with timed("vf"):
-            #print('======================================= tdlamret ====================================')
-            #print(seg["tdlamret"])
-            for _ in range(vf_iters):
-                for (mbob, mbret) in dataset.iterbatches((seg["ob"], seg["tdlamret"]),
-                include_final_partial_batch=False, batch_size=64):
-                    #with tf.Session() as sess:
-                    #    sess.run(tf.global_variables_initializer())
-                    #    aaa = sess.run(pi.vf,feed_dict={ob:mbob,ret:mbret})
-                    #    print("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
-                    #    print(aaa.shape)
-                    #    print(mbret.shape)
-                    g = allmean(compute_vflossandgrad(mbob, mbret))
-                    vfadam.update(g, vf_stepsize)
+            with timed("vf"):
+                #print('======================================= tdlamret ====================================')
+                #print(seg["tdlamret"])
+                for _ in range(vf_iters):
+                    for (mbob, mbret) in dataset.iterbatches((seg["ob"], seg["tdlamret"]),
+                    include_final_partial_batch=False, batch_size=64):
+                        #with tf.Session() as sess:
+                        #    sess.run(tf.global_variables_initializer())
+                        #    aaa = sess.run(pi.vf,feed_dict={ob:mbob,ret:mbret})
+                        #    print("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+                        #    print(aaa.shape)
+                        #    print(mbret.shape)
+                        g = allmean(compute_vflossandgrad(mbob, mbret))
+                        vfadam.update(g, vf_stepsize)
             #print(mbob,mbret)
+        except:
+            print('error')
         logger.record_tabular("ev_tdlam_before", explained_variance(vpredbefore, tdlamret))
 
         lrlocal = (seg["ep_lens"], seg["ep_rets"]) # local values
