@@ -26,7 +26,7 @@ def atari():
         lam=1.0,
         vf_iters=5,
         vf_stepsize=1e-4,
-        entcoeff=0.01,
+        entcoeff=0.00,
     )
 
 def gym_ple():
@@ -40,7 +40,7 @@ def gym_ple():
         lam=1.0,
         vf_iters=5,
         vf_stepsize=1e-4,
-        entcoeff=0.01,
+        entcoeff=0.00,
     )
 
 def mujoco():
